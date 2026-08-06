@@ -201,25 +201,13 @@ class EstrategiaPivot(Estrategia):
         
         direccion = max(direcciones, key=direcciones.get)
         
-        # Calcular confianza basada en:
-        # 1. Número de detectores confirmando
-        # 2. Clasificación de cada detector (A=100, B=75, C=50, D=25)
-        # 3. Alineación con tendencia D1
-        # 4. Kill zone activa
+        # Calcular confianza usando Wilson Score (Fase 7.2)
+        from estrategias.pivot.scoring import scorer_global
         
-        confianza_base = min(100, len(detectores_activos) * 20)  # 20% por detector
-        
-        # Bonus por clasificaciones
-        bonus_clasificacion = 0
-        for detector_nombre in detectores_activos:
-            resultado = resultados[detector_nombre]
-            clasif = resultado.get("clasificacion", "C")
-            if clasif == "A":
-                bonus_clasificacion += 10
-            elif clasif == "B":
-                bonus_clasificacion += 5
-        
-        confianza = confianza_base + bonus_clasificacion
+        confianza, explicacion_scoring = scorer_global.obtener_confianza(
+            detectores_activos=detectores_activos,
+            direccion=direccion,
+        )
         
         # Ajustar por tendencia D1
         if self.config.usar_trend_d1 and ctx.trend_d1 != "NEUTRO":
