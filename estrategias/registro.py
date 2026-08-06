@@ -29,7 +29,8 @@ class RegistroEstrategias:
                         self._estrategias[obj.nombre] = obj
 
     def listar(self) -> list[dict]:
-        return [{"nombre": n, "version": c.version, "descripcion": c.descripcion,
+        return [{"nombre": n, "version": c.version, 
+                 "descripcion": getattr(c, "descripcion", ""),
                  "timeframes": c.timeframes, "parametros": c.parametros}
                 for n, c in self._estrategias.items()]
 

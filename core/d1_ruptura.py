@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """D1 — Ruptura de rango (intravela)."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto, Detector
-from core.detectores.utils import clamp_0_100
+from core.base import Contexto, Detector
+from core.utils import clamp_0_100
 
 
 class DetectorD1(Detector):

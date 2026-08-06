@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """D3 — Fair Value Gap (intravela)."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto, Detector
+from core.base import Contexto, Detector
 
 
 class DetectorD3(Detector):

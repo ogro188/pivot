@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Tuple, Optional, Set
 
 from core.estructuras import EstructuraRef, Signal, DetectorLatch, MSSCache, ZonaCache
-from core.detectores import (
+from core import (
     Contexto, Detector,
     EstructuraProvider,
     DetectorD1, DetectorD2, DetectorD2Anticipacion,
@@ -427,7 +427,7 @@ class PivotRadarEngine:
         if idx < 0:
             return False
         current_bar = self._i_time(self.df_m15, 0)
-        from core.detectores.utils import build_pattern_key
+        from core.utils import build_pattern_key
         pattern_key = build_pattern_key(detector, direction, key_level)
         latch = self.g_detector_latch[idx]
         if latch.last_signal_bar != current_bar:
@@ -442,7 +442,7 @@ class PivotRadarEngine:
         if idx < 0:
             return
         current_bar = self._i_time(self.df_m15, 0)
-        from core.detectores.utils import build_pattern_key
+        from core.utils import build_pattern_key
         latch = self.g_detector_latch[idx]
         latch.last_signal_bar = current_bar
         latch.last_pattern_key = build_pattern_key(detector, direction, key_level)
@@ -549,7 +549,7 @@ class PivotRadarEngine:
                 score += 5.0
         else:
             score += 10.0
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         return clamp_0_100(score), distancia
 
     # =========================================================================
@@ -789,7 +789,7 @@ class PivotRadarEngine:
         avg = s / count
         if avg <= 0:
             return 50.0
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         return clamp_0_100((1.5 - atr_now / avg) / 1.0 * 100.0)
 
     def _calc_g2(self) -> float:
@@ -805,7 +805,7 @@ class PivotRadarEngine:
             else: down20 += 1
         d10 = max(up10, down10) / 10.0
         d20 = max(up20, down20) / 20.0
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         return clamp_0_100(
             clamp_0_100((d10 - 0.5) / 0.5 * 100.0) * 0.6
             + clamp_0_100((d20 - 0.5) / 0.5 * 100.0) * 0.4
@@ -825,7 +825,7 @@ class PivotRadarEngine:
             total += h - l
         if total <= 0:
             return 50.0
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         return clamp_0_100(neto / total * 100.0)
 
     def _calc_g4(self) -> float:
@@ -850,7 +850,7 @@ class PivotRadarEngine:
         atr14 = self.g_atr14_buffer[0] if self.g_atr14_buffer else 0.0
         if atr14 <= 0:
             return 0.0
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         score_mechas = ((mu - mp) / atr14) * 50.0
         score_cuerpos = ((cu - cp) / atr14) * 50.0
         return clamp_0_100(
@@ -861,7 +861,7 @@ class PivotRadarEngine:
     # RUTEAR SEÑAL
     # =========================================================================
     def route_signal(self, sig: Signal):
-        from core.detectores.utils import clamp_0_100
+        from core.utils import clamp_0_100
         sig.calidad_sweep = clamp_0_100(sig.calidad_sweep)
         sig.calidad_mss = clamp_0_100(sig.calidad_mss)
         sig.calidad_fvg = clamp_0_100(sig.calidad_fvg)

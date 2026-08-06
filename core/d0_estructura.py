@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """D0 — Estructura: pivots H1, sweep maestro, zona de interés, dirección."""
 from core.estructuras import EstructuraRef
-from core.detectores.base import Contexto
+from core.base import Contexto
 
 
 class EstructuraProvider:

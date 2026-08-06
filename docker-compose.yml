@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # API Backend + Backtest Engine
+  pivot-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pivot-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - pivot_storage:/app/data/storage
+    environment:
+      - DATABASE_URL=sqlite:///app/data/storage/pivot.db
+      - LOG_LEVEL=INFO
+      - DERIV_APP_ID=${DERIV_APP_ID:-123456}
+      - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - pivot_network
+
+  # WebSocket Server para datos en vivo
+  pivot-ws:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pivot-ws
+    command: python kernel/feeds/deriv.py
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/app/data
+      - pivot_storage:/app/data/storage
+    environment:
+      - DERIV_APP_ID=${DERIV_APP_ID:-123456}
+      - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
+      - WS_PORT=8765
+    depends_on:
+      - pivot-api
+    restart: unless-stopped
+    networks:
+      - pivot_network
+
+  # Frontend React
+  pivot-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pivot-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_WS_URL=ws://localhost:8765
+    depends_on:
+      - pivot-api
+    restart: unless-stopped
+    networks:
+      - pivot_network
+
+  # Base de datos SQLite (volume persistente)
+  # Nota: SQLite es file-based, no necesita servicio separado
+  # El volumen se monta directamente en los servicios
+
+volumes:
+  pivot_storage:
+    driver: local
+
+networks:
+  pivot_network:
+    driver: bridge
