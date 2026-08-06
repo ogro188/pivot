@@ -299,7 +299,7 @@ class MultiAssetRuntime:
                 simbolo=simbolo,
                 estrategia_cls=self.config.estrategia_cls,
                 config=self.config,
-                self.db
+                db=self.db
             )
             self.runtimes[simbolo] = runtime
         
