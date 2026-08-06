@@ -1,8 +1,57 @@
-data/*.db
-data/*.csv
+```
+# Dependencies
+.venv/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+env.bak/
+venv.bak/
+
+# Build and distribution artifacts
+build/
+dist/
+*.egg
+*.egg-info/
+*.so
+*.whl
+
+# Logs
+*.log
+
+# Environment variables
 .env
-frontend/node_modules/
-frontend/dist/
-*.secrets.json
+.env.local
+.env.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.cache
+.pytest_cache/
+.mypy_cache/
+
+# Docker
+.dockerenv
+.Dockerfile
+docker-compose*.yml
+
+# Runtime
+*.tmp
+*.temp
+```

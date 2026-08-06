@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """Scoring: métricas G, calidades, confluencias, salud tendencial."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto
-from core.detectores.utils import clamp_0_100
+from core.base import Contexto
+from core.utils import clamp_0_100
 
 
 class ScoringEngine:

@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """D2_ANTICIPACION — Alerta temprana de sweep con confluencias."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto, Detector
-from core.detectores.utils import clamp_0_100
+from core.base import Contexto, Detector
+from core.utils import clamp_0_100
 
 
 class DetectorD2Anticipacion(Detector):

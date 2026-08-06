@@ -3,7 +3,7 @@
 """Hipótesis narrativa + vencimiento. Lógica idéntica al motor v7.9."""
 import math
 from core.estructuras import Signal, EstructuraRef
-from core.detectores.base import Contexto
+from core.base import Contexto
 
 
 def calcular_vencimiento(sig: Signal, umbrales: dict) -> int:

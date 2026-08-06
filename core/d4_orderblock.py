@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """D4 — Order Block confluence (intravela)."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto, Detector
+from core.base import Contexto, Detector
 
 
 class DetectorD4(Detector):

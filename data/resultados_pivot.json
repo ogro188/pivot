@@ -1,0 +1,20 @@
+{
+  "estrategia": "PIVOT",
+  "simbolo": "EURUSD",
+  "periodo_inicio": "2024-01-02T00:00:00+00:00",
+  "periodo_fin": "2024-01-07T04:45:00+00:00",
+  "timeframe_principal": "M15",
+  "total_operaciones": 0,
+  "operaciones_ganadoras": 0,
+  "operaciones_perdedoras": 0,
+  "winrate": 0.0,
+  "profit_factor": 0.0,
+  "retorno_total": 0.0,
+  "retorno_promedio": 0.0,
+  "drawdown_maximo": 0.0,
+  "sharpe_ratio": 0.0,
+  "sortino_ratio": 0.0,
+  "racha_ganadora_max": 0,
+  "racha_perdedora_max": 0,
+  "metrics_extra": {}
+}

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """D5 — Market Structure Shift H4 + Sweep (intravela)."""
 from core.estructuras import Signal
-from core.detectores.base import Contexto, Detector
+from core.base import Contexto, Detector
 
 
 class DetectorD5(Detector):
