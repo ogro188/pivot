@@ -24,8 +24,12 @@ from core import (
 )
 from core.scoring import ScoringEngine
 from core.hipotesis import generar_hipotesis
-from core.persistencia import Persistencia
 from core.alertas import AlertasEngine
+# Migración G12: usar kernel.storage en lugar de core.persistencia
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from kernel.storage import Database
 
 
 ATR_BUFFER_SIZE = 55
@@ -158,8 +162,9 @@ class PivotRadarEngine:
         self.g_ema20_h4_buffer = []
         self.g_ema50_h4_buffer = []
 
-        # Subsistemas
-        self.persistencia = Persistencia(data_dir, symbol, cola_senales_file, lock_timeout_ms, lock_stale_sec)
+        # Subsistemas - Migración G12: usar Database en lugar de Persistencia CSV
+        self.db = Database(os.path.join(data_dir, "pivot_core.db"))
+        self.db.initialize()
         self.alertas = AlertasEngine(ntfy_topic, ntfy_server, symbol, point)
         self.scoring = None  # se crea por vela
 
@@ -173,8 +178,11 @@ class PivotRadarEngine:
             DetectorD5(),
         ]
 
-        # Cargar pending
-        self.g_pending_signals, self.g_pending_ids = self.persistencia.load_pending_signals()
+        # Cargar pending desde SQLite en lugar de CSV - Migración G12
+        import asyncio
+        loop = asyncio.new_event_loop()
+        self.g_pending_signals, self.g_pending_ids = loop.run_until_complete(self.db.cargar_cola_pendientes())
+        loop.close()
 
         print("=== PivotRadar Hybrid v8.0 Python ===")
         print(f"Símbolo: {self.symbol} | Timeframe: M15")
@@ -875,8 +883,25 @@ class PivotRadarEngine:
         self.g_pending_signals.append(sig)
         self.g_pending_ids.add(sig.id)
 
+        # Migración G12: guardar en SQLite en lugar de CSV
         if not sig.csv_written:
-            self.persistencia.write_signal_to_csv(sig, self.point)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(self.db.guardar_senal_core(
+                signal_id=sig.id,
+                entry_time=sig.entry_time,
+                symbol=sig.symbol,
+                direction=sig.direction,
+                entry_price=sig.entry_price,
+                detector=sig.detector,
+                tipo=sig.tipo or "",
+                hipotesis_prob_min=sig.hipotesis_prob_min or 0.0,
+                hipotesis_prob_max=sig.hipotesis_prob_max or 0.0,
+                hipotesis_expiry_velas=sig.hipotesis_expiry_velas or 0,
+                conviccion=sig.conviccion or 0.0,
+                regimen_volatilidad=sig.regimen_volatilidad or ""
+            ))
+            loop.close()
             sig.csv_written = True
 
         route = False
@@ -887,23 +912,17 @@ class PivotRadarEngine:
         if sig.detector == "D4" and self.inp_cola_d4_enabled: route = True
         if sig.detector == "D5" and self.inp_cola_d5_enabled: route = True
 
+        # Migración G12: guardar cola en SQLite en lugar de archivo con lock
         if route:
-            if self.persistencia.acquire_lock():
-                try:
-                    cola_path = os.path.join(self.data_dir, self.inp_cola_senales_file)
-                    with open(cola_path, "a", encoding="utf-8") as f:
-                        line = (
-                            f"{sig.entry_time.strftime('%Y.%m.%d %H:%M:%S')};"
-                            f"{sig.symbol};{sig.direction};{self.alertas._fmt_price(sig.entry_price)};"
-                            f"{sig.detector};{sig.tipo};{sig.session};{sig.kill_zone};"
-                            f"{sig.contexto_estructural:.1f};{sig.estructura_direccion};"
-                            f"{sig.conviccion}\n"
-                        )
-                        f.write(line)
-                except OSError as e:
-                    print(f"Error escribiendo cola: {e}")
-                finally:
-                    self.persistencia.release_lock()
+            import asyncio
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(self.db.guardar_cola_senal(
+                signal_id=sig.id,
+                symbol=sig.symbol,
+                detector=sig.detector,
+                priority={"D1": 1, "D2": 1, "D2_ANTICIPACION": 2, "D3": 3, "D3_DEF": 3, "D4": 4, "D5": 5}.get(sig.detector, 5)
+            ))
+            loop.close()
 
         msg = self.alertas.build_alert_text(sig)
         now = datetime.now()
@@ -981,8 +1000,25 @@ class PivotRadarEngine:
             s.mae[idx] = (mae - s.entry_price) / self.point if s.direction == 1 else (s.entry_price - mae) / self.point
             s.measured[idx] = True
             s.signal_age_bars = shift
+            # Migración G12: guardar en SQLite en lugar de CSV
             if not s.csv_written:
-                self.persistencia.write_signal_to_csv(s, self.point)
+                import asyncio
+                loop = asyncio.new_event_loop()
+                loop.run_until_complete(self.db.guardar_senal_core(
+                    signal_id=s.id,
+                    entry_time=s.entry_time,
+                    symbol=s.symbol,
+                    direction=s.direction,
+                    entry_price=s.entry_price,
+                    detector=s.detector,
+                    tipo=s.tipo or "",
+                    hipotesis_prob_min=s.hipotesis_prob_min or 0.0,
+                    hipotesis_prob_max=s.hipotesis_prob_max or 0.0,
+                    hipotesis_expiry_velas=s.hipotesis_expiry_velas or 0,
+                    conviccion=s.conviccion or 0.0,
+                    regimen_volatilidad=s.regimen_volatilidad or ""
+                ))
+                loop.close()
                 s.csv_written = True
             if idx == 3:
                 s.completada = True
@@ -990,7 +1026,12 @@ class PivotRadarEngine:
 
         self.g_pending_signals = keep
         self.g_pending_ids = {s.id for s in self.g_pending_signals}
-        self.persistencia.save_pending_signals(self.g_pending_signals)
+        # Migración G12: guardar pending en SQLite en lugar de CSV
+        import asyncio
+        loop = asyncio.new_event_loop()
+        for s in self.g_pending_signals:
+            loop.run_until_complete(self.db.marcar_cola_procesada(s.id))
+        loop.close()
 
     def test_ntfy(self):
         msg = (

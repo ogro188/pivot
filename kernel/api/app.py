@@ -66,35 +66,35 @@ def create_app() -> FastAPI:
     @app.get("/api/assets")
     async def get_assets() -> List[Dict[str, Any]]:
         """
-        Obtiene la lista de activos disponibles.
+        Obtiene la lista de activos disponibles desde configuración JSON.
         
         Returns:
-            Lista de activos con su configuración
+            Lista de activos con su configuración básica
         """
-        # Cargar activos desde la carpeta activos/
-        activos_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "activos")
-        activos = []
+        from kernel.activos_loader import listar_activos_disponibles, cargar_activo
+        import logging
         
-        if os.path.exists(activos_dir):
-            for archivo in os.listdir(activos_dir):
-                if archivo.endswith(".json"):
-                    simbolo = archivo.replace(".json", "")
-                    activos.append({
-                        "simbolo": simbolo,
-                        "nombre": simbolo,
-                        "activo": True
-                    })
+        logger = logging.getLogger(__name__)
         
-        # Activos por defecto si no hay archivos
-        if not activos:
-            activos = [
-                {"simbolo": "EURUSD", "nombre": "Euro/US Dollar", "activo": True},
-                {"simbolo": "XAUUSD", "nombre": "Gold/US Dollar", "activo": True},
-                {"simbolo": "GBPUSD", "nombre": "British Pound/US Dollar", "activo": True},
-                {"simbolo": "USDJPY", "nombre": "US Dollar/Japanese Yen", "activo": True}
-            ]
+        # Usar el loader real para obtener activos desde archivos JSON
+        simbolos = listar_activos_disponibles()
+        resultado = []
         
-        return activos
+        for simbolo in simbolos:
+            try:
+                activo = cargar_activo(simbolo)
+                resultado.append({
+                    "simbolo": activo.simbolo,
+                    "punto": activo.punto,
+                    "tick_size": activo.tick_size,
+                    "contract_size": activo.contract_size,
+                    "activo": True
+                })
+            except ValueError as e:
+                # Loguear y omitir activos mal formados, no fallar toda la lista
+                logger.warning(f"Activo {simbolo} inválido: {e}")
+        
+        return resultado
     
     @app.get("/api/strategies")
     async def get_strategies() -> List[Dict[str, Any]]:
@@ -130,20 +130,29 @@ def create_app() -> FastAPI:
     @app.post("/api/backtest")
     async def run_backtest(request: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Ejecuta un backtest de una estrategia.
+        Ejecuta un backtest real de una estrategia usando BacktestEngine.
         
         Request body:
         - estrategia: Nombre de la estrategia
         - activo: Símbolo del activo
-        - timeframe: Timeframe a usar
+        - timeframe: Timeframe a usar (ej. "M15", "H1")
         - fecha_inicio: Fecha de inicio (YYYY-MM-DD)
         - fecha_fin: Fecha de fin (YYYY-MM-DD)
+        - capital_inicial: Capital inicial (default: 10000)
+        - riesgo_por_operacion: Riesgo por operación % (default: 0.01)
+        - slippage_pips: Slippage en pips (default: 0)
+        - comision_lote: Comisión por lote (default: 0)
         - parametros: Parámetros de la estrategia (opcional)
         
         Returns:
-            Resultados del backtest con métricas
+            Resultados del backtest con métricas completas
         """
-        # Validar request
+        from kernel.backtest import BacktestEngine
+        from kernel.feeds.csv import CSVFeed
+        from kernel.activos_loader import cargar_activo
+        from datetime import datetime
+        
+        # Validar campos requeridos
         required_fields = ["estrategia", "activo", "timeframe", "fecha_inicio", "fecha_fin"]
         for field in required_fields:
             if field not in request:
@@ -158,8 +167,54 @@ def create_app() -> FastAPI:
                 detail=f"Estrategia '{request['estrategia']}' no encontrada. Disponibles: {estrategia_nombres}"
             )
         
-        # TODO: Implementar motor de backtest real (Fase 2)
-        # Por ahora retornar resultado mock
+        # Cargar configuración del activo desde JSON
+        try:
+            activo = cargar_activo(request["activo"])
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        
+        # Fabricar instancia de la estrategia
+        estrategia_instancia = registro.fabricar(request["estrategia"])
+        
+        # Construir path al CSV de datos históricos
+        data_path = f"data/{request['activo'].lower()}_{request['timeframe'].lower()}.csv"
+        if not os.path.exists(data_path):
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No hay datos históricos en {data_path}. Disponible: EURUSD M15 en data/eurusd_m15.csv"
+            )
+        
+        # Crear feed CSV con filtro de fechas
+        try:
+            fecha_inicio = datetime.strptime(request["fecha_inicio"], "%Y-%m-%d")
+            fecha_fin = datetime.strptime(request["fecha_fin"], "%Y-%m-%d")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Formato de fecha inválido. Use YYYY-MM-DD")
+        
+        feed = CSVFeed(
+            path=data_path,
+            timeframe=request["timeframe"],
+            symbol=activo.simbolo,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin
+        )
+        
+        # Configurar y ejecutar motor de backtest
+        engine = BacktestEngine(
+            estrategia=estrategia_instancia,
+            activo=activo,
+            capital_inicial=request.get("capital_inicial", 10000.0),
+            riesgo_por_operacion=request.get("riesgo_por_operacion", 0.01),
+            slippage_pips=request.get("slippage_pips", 0.0),
+            comision_lote=request.get("comision_lote", 0.0),
+        )
+        
+        resultado = engine.ejecutar(
+            feeds={request["timeframe"]: feed},
+            params_estrategia=request.get("parametros", {})
+        )
+        
+        # Retornar resultados completos
         return {
             "status": "completed",
             "estrategia": request["estrategia"],
@@ -167,17 +222,7 @@ def create_app() -> FastAPI:
             "timeframe": request["timeframe"],
             "fecha_inicio": request["fecha_inicio"],
             "fecha_fin": request["fecha_fin"],
-            "metricas": {
-                "total_operaciones": 0,
-                "ganadoras": 0,
-                "perdedoras": 0,
-                "winrate": 0.0,
-                "profit_factor": 0.0,
-                "sharpe_ratio": 0.0,
-                "max_drawdown": 0.0,
-                "pnl_total": 0.0
-            },
-            "mensaje": "Backtest engine en implementación (Fase 2)"
+            **resultado.to_dict()
         }
     
     @app.get("/api/config")
