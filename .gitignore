@@ -1,57 +1,46 @@
 ```
-# Dependencies
-.venv/
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-env.bak/
-venv.bak/
+# Database files
+*.db
 
-# Build and distribution artifacts
-build/
-dist/
-*.egg
-*.egg-info/
-*.so
-*.whl
+# CSV files (likely generated/test data)
+*.csv
 
 # Logs
 *.log
 
-# Environment variables
+# Environment files
 .env
 .env.local
-.env.*
+*.env.*
 
-# IDE and editor files
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+
+# Build artifacts
+dist/
+build/
+target/
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-# OS generated files
+# OS files
 .DS_Store
 Thumbs.db
 
-# Testing
-.coverage
+# Coverage reports
+coverage/
 htmlcov/
-.coverage.*
-.cache
-.pytest_cache/
-.mypy_cache/
+.coverage
 
-# Docker
-.dockerenv
-.Dockerfile
-docker-compose*.yml
-
-# Runtime
+# Temporary files
 *.tmp
-*.temp
+*.swp
+*.swo
 ```

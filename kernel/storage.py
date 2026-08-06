@@ -68,6 +68,35 @@ class Database:
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
         
+        # Tabla para señales del core (migración desde persistencia.py)
+        cursor.execute("""CREATE TABLE IF NOT EXISTS senales_core (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id TEXT UNIQUE,
+            entry_time DATETIME,
+            symbol TEXT,
+            direction INTEGER,
+            entry_price REAL,
+            detector TEXT,
+            tipo TEXT,
+            hipotesis_prob_min REAL,
+            hipotesis_prob_max REAL,
+            hipotesis_expiry_velas INTEGER,
+            conviccion REAL,
+            regimen_volatilidad TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+        
+        # Tabla para cola de señales pendientes
+        cursor.execute("""CREATE TABLE IF NOT EXISTS cola_senales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            signal_id TEXT,
+            symbol TEXT,
+            detector TEXT,
+            priority INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            processed BOOLEAN DEFAULT 0
+        )""")
+        
         conn.commit()
         self._initialized = True
         logger.info(f"Base de datos inicializada: {self.db_path}")
@@ -164,10 +193,210 @@ class Database:
         params = (estrategia, simbolo, nivel, mensaje, json.dumps(contexto or {}))
         await self.execute_async(query, params)
     
+    # Métodos para señales del core (migración desde persistencia.py)
+    async def guardar_senal_core(self, signal_id: str, entry_time: datetime, symbol: str, 
+                                  direction: int, entry_price: float, detector: str, tipo: str,
+                                  hipotesis_prob_min: float, hipotesis_prob_max: float,
+                                  hipotesis_expiry_velas: int, conviccion: float,
+                                  regimen_volatilidad: str):
+        """Guarda una señal del core en SQLite (reemplaza write_signal_to_csv)"""
+        self.initialize()
+        query = """INSERT OR REPLACE INTO senales_core 
+            (signal_id, entry_time, symbol, direction, entry_price, detector, tipo,
+             hipotesis_prob_min, hipotesis_prob_max, hipotesis_expiry_velas, conviccion, regimen_volatilidad)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        params = (signal_id, entry_time.isoformat(), symbol, direction, entry_price, 
+                  detector, tipo, hipotesis_prob_min, hipotesis_prob_max, 
+                  hipotesis_expiry_velas, conviccion, regimen_volatilidad)
+        await self.execute_async(query, params)
+    
+    async def obtener_senales_core(self, symbol: str = None, limite: int = 100) -> List[Dict]:
+        """Obtiene señales históricas del core"""
+        self.initialize()
+        if symbol:
+            return await self.fetchall_async(
+                "SELECT * FROM senales_core WHERE symbol=? ORDER BY entry_time DESC LIMIT ?",
+                (symbol, limite)
+            )
+        return await self.fetchall_async(
+            "SELECT * FROM senales_core ORDER BY entry_time DESC LIMIT ?",
+            (limite,)
+        )
+    
+    async def guardar_cola_senal(self, signal_id: str, symbol: str, detector: str, priority: int = 0):
+        """Agrega una señal a la cola de pendientes"""
+        self.initialize()
+        query = """INSERT INTO cola_senales (signal_id, symbol, detector, priority) VALUES (?, ?, ?, ?)"""
+        await self.execute_async(query, (signal_id, symbol, detector, priority))
+    
+    async def obtener_cola_pendientes(self) -> List[Dict]:
+        """Obtiene señales pendientes de procesar"""
+        self.initialize()
+        return await self.fetchall_async(
+            "SELECT * FROM cola_senales WHERE processed=0 ORDER BY priority ASC, created_at ASC"
+        )
+    
+    async def marcar_cola_procesada(self, signal_id: str):
+        """Marca una señal como procesada"""
+        self.initialize()
+        await self.execute_async(
+            "UPDATE cola_senales SET processed=1 WHERE signal_id=?",
+            (signal_id,)
+        )
+    
+    async def cargar_cola_pendientes(self) -> tuple:
+        """Carga señales pendientes (retorna dict y set de IDs)"""
+        self.initialize()
+        pendientes = await self.obtener_cola_pendientes()
+        signals_dict = {}
+        ids_set = set()
+        for p in pendientes:
+            signal_id = p['signal_id']
+            ids_set.add(signal_id)
+            signals_dict[signal_id] = p
+        return signals_dict, ids_set
+    
     def close(self):
         if self._conn:
             self._conn.close()
             self._conn = None
+    
+    # Métodos para ML Dataset (Fase 7.3)
+    def guardar_resultado_operacion(self, operacion_dict: dict):
+        """
+        Guarda resultado de operación en tabla append-only para ML dataset.
+        Tabla: signals_ml_dataset
+        
+        Args:
+            operacion_dict: Diccionario con campos:
+                - timestamp_entrada, timestamp_salida
+                - simbolo, direccion, detectores_activos
+                - g_metrics (G1-G4 al momento de entrada)
+                - sesion, zona_premium_discount
+                - pnl_puntos, razon_salida, fue_ganadora
+        """
+        with self._lock:
+            cursor = self._get_connection().cursor()
+            
+            # Crear tabla si no existe
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signals_ml_dataset (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_entrada TEXT NOT NULL,
+                    timestamp_salida TEXT,
+                    simbolo TEXT NOT NULL,
+                    direccion INTEGER NOT NULL,
+                    detectores_activos TEXT NOT NULL,
+                    g_atr8 REAL,
+                    g_atr14 REAL,
+                    g_atr50 REAL,
+                    g_ema50_dist REAL,
+                    g_ema50_angulo REAL,
+                    g_rsi14 REAL,
+                    g_d1_trend INTEGER,
+                    g_h4_trend INTEGER,
+                    g_volatilidad REAL,
+                    g_zona TEXT,
+                    sesion TEXT,
+                    zona_premium_discount TEXT,
+                    pnl_puntos REAL,
+                    razon_salida TEXT,
+                    fue_ganadora INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Extraer G metrics si existen
+            g_metrics = operacion_dict.get('g_metrics', {})
+            
+            cursor.execute("""
+                INSERT INTO signals_ml_dataset (
+                    timestamp_entrada, timestamp_salida, simbolo, direccion,
+                    detectores_activos, g_atr8, g_atr14, g_atr50,
+                    g_ema50_dist, g_ema50_angulo, g_rsi14, g_d1_trend, g_h4_trend,
+                    g_volatilidad, g_zona, sesion, zona_premium_discount,
+                    pnl_puntos, razon_salida, fue_ganadora
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                operacion_dict.get('timestamp_entrada'),
+                operacion_dict.get('timestamp_salida'),
+                operacion_dict.get('simbolo'),
+                operacion_dict.get('direccion'),
+                json.dumps(operacion_dict.get('detectores_activos', [])),
+                g_metrics.get('g_atr8'),
+                g_metrics.get('g_atr14'),
+                g_metrics.get('g_atr50'),
+                g_metrics.get('g_ema50_dist'),
+                g_metrics.get('g_ema50_angulo'),
+                g_metrics.get('g_rsi14'),
+                g_metrics.get('g_d1_trend'),
+                g_metrics.get('g_h4_trend'),
+                g_metrics.get('g_volatilidad'),
+                g_metrics.get('g_zona'),
+                operacion_dict.get('sesion'),
+                operacion_dict.get('zona_premium_discount'),
+                operacion_dict.get('pnl_puntos'),
+                operacion_dict.get('razon_salida'),
+                1 if operacion_dict.get('fue_ganadora') else 0
+            ))
+            
+            self._get_connection().commit()
+    
+    def exportar_ml_dataset(self, output_path: str = "ml_dataset.csv") -> int:
+        """
+        Exporta toda la tabla signals_ml_dataset a CSV para entrenamiento de ML.
+        
+        Returns:
+            Número de filas exportadas
+        """
+        import pandas as pd
+        
+        with self._lock:
+            df = pd.read_sql_query(
+                "SELECT * FROM signals_ml_dataset ORDER BY timestamp_entrada",
+                self._get_connection()
+            )
+        
+        if len(df) == 0:
+            return 0
+        
+        df.to_csv(output_path, index=False)
+        return len(df)
+    
+    def obtener_estadisticas_ml_dataset(self) -> dict:
+        """Obtiene estadísticas básicas del dataset ML."""
+        with self._lock:
+            cursor = self._get_connection().cursor()
+            
+            # Total operaciones
+            cursor.execute("SELECT COUNT(*) FROM signals_ml_dataset")
+            total = cursor.fetchone()[0]
+            
+            if total == 0:
+                return {"total_operaciones": 0}
+            
+            # Win rate general
+            cursor.execute("SELECT AVG(fue_ganadora) FROM signals_ml_dataset WHERE fue_ganadora IS NOT NULL")
+            win_rate = cursor.fetchone()[0] or 0
+            
+            # Operaciones por combinación de detectores
+            cursor.execute("""
+                SELECT detectores_activos, COUNT(*) as count, AVG(fue_ganadora) as win_rate
+                FROM signals_ml_dataset
+                GROUP BY detectores_activos
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            top_combinaciones = cursor.fetchall()
+            
+            return {
+                "total_operaciones": total,
+                "win_rate_general": round(win_rate, 4),
+                "top_combinaciones": [
+                    {"detectores": c[0], "count": c[1], "win_rate": round(c[2] or 0, 4)}
+                    for c in top_combinaciones
+                ]
+            }
 
 _db_instance: Optional[Database] = None
 

@@ -1,0 +1,2 @@
+id,timestamp_entrada,timestamp_salida,simbolo,direccion,detectores_activos,g_atr8,g_atr14,g_atr50,g_ema50_dist,g_ema50_angulo,g_rsi14,g_d1_trend,g_h4_trend,g_volatilidad,g_zona,sesion,zona_premium_discount,pnl_puntos,razon_salida,fue_ganadora,created_at
+1,2024-01-15T10:30:00,,EURUSD,1,"[""D2"", ""D5""]",,,,,,,,,,,,,15.5,,1,2026-08-06 22:21:26

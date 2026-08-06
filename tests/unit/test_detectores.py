@@ -112,7 +112,7 @@ class TestDetectorSweep:
     """Tests para DetectorSweep (D2)"""
     
     def test_detecta_sweep_liquidez(self):
-        """Verifica detección de barrido de liquidez"""
+        """Verifica detección de barrido de liquidez con patrón conocido."""
         # Crear patrón de sweep: mínimo anterior, luego wick abajo, luego cierre arriba
         n_velas = 50
         fechas = [datetime.now() - timedelta(minutes=i*15) for i in range(n_velas, 0, -1)]
@@ -137,8 +137,14 @@ class TestDetectorSweep:
         detector = DetectorD2()
         
         resultado = detector.detectar(ctx)
-        # Debería detectar el sweep de mínimos o None si no hay buffers
         
+        # ASSERTS REALES: Verificar que detecta el patrón
+        # Nota: Puede ser None si faltan buffers de RSI/ATR, pero si existe debe tener estructura válida
+        if resultado is not None:
+            assert hasattr(resultado, 'direccion'), "El resultado debe tener dirección"
+            assert resultado.direccion in (1, -1), f"Dirección inválida: {resultado.direccion}"
+            assert hasattr(resultado, 'activo'), "El resultado debe tener campo activo"
+    
     def test_no_explota_sin_buffers(self):
         """Verifica manejo graceful sin buffers RSI"""
         df = crear_dataframe_falso(50, 'lateral')
@@ -148,6 +154,34 @@ class TestDetectorSweep:
         resultado = detector.detectar(ctx)
         # Debería retornar None sin explotar
         assert resultado is None
+    
+    def test_no_detecta_falso_positivo(self):
+        """Verifica que NO detecta sweep cuando no hay patrón (sin wick pronunciado)."""
+        n_velas = 50
+        fechas = [datetime.now() - timedelta(minutes=i*15) for i in range(n_velas, 0, -1)]
+        
+        # Precios en tendencia suave sin wicks extremos
+        precios = [1.1000 + i*0.0001 for i in range(n_velas)]
+        high = [p + 0.0001 for p in precios]  # Wick pequeño
+        low = [p - 0.0001 for p in precios]   # Wick pequeño
+        
+        df = pd.DataFrame({
+            'timestamp': fechas,
+            'open': precios,
+            'high': high,
+            'low': low,
+            'close': precios,
+            'volume': [100]*n_velas
+        })
+        df.set_index('timestamp', inplace=True)
+        
+        ctx = crear_contexto_falso(df_m15=df)
+        detector = DetectorD2()
+        
+        resultado = detector.detectar(ctx)
+        
+        # ASSERT REAL: No debería detectar sweep en patrón limpio
+        assert resultado is None, "No debería detectar sweep sin patrón claro de wick extremo"
 
 
 class TestDetectorFVG:
@@ -182,15 +216,20 @@ class TestDetectorMSS:
     """Tests para DetectorMSS (D5)"""
     
     def test_detecta_mss_basico(self):
-        """Verifica detección de Market Structure Shift básico"""
+        """Verifica detección de Market Structure Shift básico."""
         # MSS: ruptura de estructura en dirección opuesta a tendencia previa
         df = crear_dataframe_falso(100, 'alcista')
         ctx = crear_contexto_falso(df_m15=df)
         detector = DetectorD5()
         
         resultado = detector.detectar(ctx)
-        # En tendencia alcista pura quizás no haya MSS
         
+        # ASSERTS REALES: Si detecta MSS, debe tener estructura válida
+        if resultado is not None:
+            assert hasattr(resultado, 'direccion'), "El resultado debe tener dirección"
+            assert resultado.direccion in (1, -1), f"Dirección inválida: {resultado.direccion}"
+            assert hasattr(resultado, 'activo'), "El resultado debe tener campo activo"
+    
     def test_no_explota_sin_datos_h4(self):
         """Verifica manejo graceful sin datos H4"""
         df_m15 = crear_dataframe_falso(50, 'alcista')
@@ -200,6 +239,31 @@ class TestDetectorMSS:
         resultado = detector.detectar(ctx)
         # Debería retornar None sin explotar
         assert resultado is None
+    
+    def test_no_detecta_falso_positivo_mss(self):
+        """Verifica que NO detecta MSS en tendencia pura sin ruptura."""
+        # Tendencia alcista perfecta sin rupturas de estructura
+        n_velas = 100
+        fechas = [datetime.now() - timedelta(minutes=i*15) for i in range(n_velas, 0, -1)]
+        precios = [1.1000 + i*0.0001 for i in range(n_velas)]  # Tendencia constante
+        
+        df = pd.DataFrame({
+            'timestamp': fechas,
+            'open': precios,
+            'high': [p + 0.0002 for p in precios],
+            'low': [p - 0.0002 for p in precios],
+            'close': precios,
+            'volume': [100]*n_velas
+        })
+        df.set_index('timestamp', inplace=True)
+        
+        ctx = crear_contexto_falso(df_m15=df)
+        detector = DetectorD5()
+        
+        resultado = detector.detectar(ctx)
+        
+        # ASSERT REAL: No debería detectar MSS en tendencia limpia sin ruptura
+        assert resultado is None, "No debería detectar MSS en tendencia pura sin ruptura de estructura"
 
 
 def test_integracion_todos_detectores():

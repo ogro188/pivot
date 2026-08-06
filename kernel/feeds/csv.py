@@ -44,6 +44,8 @@ class CSVFeed:
         symbol: str = "EURUSD",
         tz: timezone = timezone.utc,
         column_map: Optional[Dict[str, str]] = None,
+        fecha_inicio: Optional[datetime] = None,
+        fecha_fin: Optional[datetime] = None,
     ):
         """
         Inicializa el feed CSV.
@@ -54,12 +56,16 @@ class CSVFeed:
             symbol: Símbolo del activo
             tz: Timezone para convertir timestamps
             column_map: Mapeo personalizado de columnas (ej: {"time": "timestamp", "o": "open"})
+            fecha_inicio: Filtrar datos desde esta fecha (opcional)
+            fecha_fin: Filtrar datos hasta esta fecha (opcional)
         """
         self.path = Path(path)
         self.timeframe = timeframe
         self.symbol = symbol
         self.tz = tz
         self.column_map = column_map or {}
+        self.fecha_inicio = fecha_inicio
+        self.fecha_fin = fecha_fin
         
         if not self.path.exists():
             raise FileNotFoundError(f"CSV no encontrado: {self.path}")
@@ -125,6 +131,22 @@ class CSVFeed:
         
         # Eliminar duplicados
         df = df[~df.index.duplicated(keep="first")]
+        
+        # Aplicar filtro de fechas si se especificó
+        if self.fecha_inicio is not None:
+            # Asegurar timezone-aware
+            if self.fecha_inicio.tzinfo is None:
+                fecha_inicio = self.fecha_inicio.replace(tzinfo=self.tz)
+            else:
+                fecha_inicio = self.fecha_inicio.astimezone(self.tz)
+            df = df[df.index >= fecha_inicio]
+        
+        if self.fecha_fin is not None:
+            if self.fecha_fin.tzinfo is None:
+                fecha_fin = self.fecha_fin.replace(tzinfo=self.tz)
+            else:
+                fecha_fin = self.fecha_fin.astimezone(self.tz)
+            df = df[df.index <= fecha_fin]
         
         return df
     

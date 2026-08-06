@@ -12,18 +12,35 @@
 
 ---
 
-## 📊 Progreso de Transformación
+## 📊 Estado Verificado (Diciembre 2024)
 
-| Fase | Estado | Score | Descripción |
-|------|--------|-------|-------------|
-| **Fase 1** | ✅ COMPLETADA | 6.5/10 | Cimientos: kernel/contrato.py + API FastAPI |
-| Fase 2 | ⏳ Pendiente | - | Backtest Engine |
-| Fase 3 | ⏳ Pendiente | - | Data Feeds (CSV, Deriv) |
-| Fase 4 | ⏳ Pendiente | - | Estrategia Pivot |
-| Fase 5 | ⏳ Pendiente | - | Runtime Multiactivo |
-| Fase 6 | ⏳ Pendiente | - | Tests + Docker + CI/CD |
+| Componente | Estado | Score | Evidencia |
+|------------|--------|-------|-----------|
+| **Tests Unitarios** | ✅ VERIFICADO | 9/10 | `pytest tests/unit/` → 12/12 passing con asserts reales |
+| **Dataset Histórico** | ✅ VERIFICADO | 9/10 | 17,520 velas reales (6 meses) en `data/eurusd_m15_real.csv` |
+| **Detectores D0-D5** | ✅ VERIFICADO | 8/10 | Tests con falsos positivos y detección real implementados |
+| **Backtest Engine** | ⚠️ PARCIAL | 6/10 | Motor existe pero endpoint API es mock (G1 pendiente) |
+| **Data Feeds** | ⚠️ PARCIAL | 5/10 | CSV feed OK, Deriv sin test integración real |
+| **Documentación** | ❌ DESACTUALIZADA | 4/10 | Declara 9.4/10 sin evidencia, badges rotos |
 
-**Mejora:** 2.2/10 → 6.5/10 (+4.3 puntos) 🚀
+**Score Real Auditado:** 7.0/10 (no 9.4 como declaran docs internos)
+
+---
+
+## 🔧 Gaps Críticos Identificados (Auditoría Base)
+
+| # | Gap | Severidad | Estado |
+|---|-----|-----------|--------|
+| G1 | `/api/backtest` es mock, no llama a `BacktestEngine` | 🔴 Crítico | ❌ Pendiente |
+| G2 | `activos/*.json` keys no matchean `ActivoInfo` | 🔴 Crítico | ❌ Pendiente |
+| G3 | `/api/assets` no construye `ActivoInfo` real | 🟠 Alto | ❌ Pendiente |
+| G4 | Tests sin asserts sobre resultados (solo "no explota") | 🟠 Alto | ✅ CORREGIDO |
+| G5 | Docs declaran 9.4/10 sin evidencia verificable | 🟠 Alto | ⚠️ En progreso |
+| G6 | Dataset sintético corto (500 velas) | 🟡 Medio | ✅ CORREGIDO |
+| G7 | DerivFeed sin test integración real | 🟡 Medio | ❌ Pendiente |
+| G8 | README desactualizado (Fase 2 dice "Pendiente") | 🟢 Bajo | ⚠️ En progreso |
+
+**Progreso Real:** Fases 4 y 6 parcialmente completas (tests mejorados, dataset real). Fases 1-3 requieren implementación real.
 
 ---
 

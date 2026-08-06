@@ -118,8 +118,31 @@ class Señal:
     timestamp_creacion: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     def __post_init__(self):
+        """Genera ID único incluyendo hash de detectores y dirección para evitar colisiones."""
         if self.id_señal is None:
-            self.id_señal = f"{self.estrategia}_{self.simbolo}_{self.tiempo.strftime('%Y%m%d_%H%M')}"
+            import hashlib
+            
+            # Obtener detectores activos de la señal (pueden estar en contexto o como atributo directo)
+            detectores_list = getattr(self, 'detectores', [])
+            
+            # Si no hay atributo directo, buscar en contexto
+            if not detectores_list and hasattr(self, 'contexto') and isinstance(self.contexto, dict):
+                detectores_list = self.contexto.get('detectores', [])
+            
+            if isinstance(detectores_list, dict):
+                detectores_list = list(detectores_list.keys())
+            elif not isinstance(detectores_list, list):
+                detectores_list = []
+            
+            # Crear string único basado en detectores y dirección
+            detectores_str = "_".join(sorted([str(d) for d in detectores_list]))
+            direccion = self.direccion if hasattr(self, 'direccion') and self.direccion else 0
+            contenido = f"{self.estrategia}_{self.simbolo}_{self.tiempo.strftime('%Y%m%d_%H%M')}_{detectores_str}_{direccion}"
+            
+            # Hash corto para mantener legibilidad pero garantizar unicidad
+            hash_suffix = hashlib.md5(contenido.encode()).hexdigest()[:6]
+            
+            self.id_señal = f"{self.estrategia}_{self.simbolo}_{self.tiempo.strftime('%Y%m%d_%H%M')}_{hash_suffix}"
 
 
 # =============================================================================
