@@ -80,7 +80,12 @@ class CoreAdapter:
         core_ctx.evaluar_contexto_estructural = kernel_ctx.evaluar_contexto_estructural
         
         # Actualizar estructura usando D0
-        if core_ctx.df_h1 is not None and len(core_ctx.df_h1) > 50:
+        # Intentar con H1 primero, si no existe usar M15 como fallback
+        df_estructura = core_ctx.df_h1
+        if df_estructura is None or len(df_estructura) <= 50:
+            df_estructura = core_ctx.df_m15
+        
+        if df_estructura is not None and len(df_estructura) > 50:
             self.estructura_provider = EstructuraProvider(core_ctx)
             estructura = self.estructura_provider.actualizar()
             core_ctx.estructura = estructura

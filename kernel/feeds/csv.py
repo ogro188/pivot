@@ -250,6 +250,38 @@ class CSVFeed:
     def total_bars(self) -> int:
         """Número total de velas."""
         return len(self.df)
+    
+    def resamplear_ohlc(self, timeframe_destino: str) -> pd.DataFrame:
+        """
+        Deriva OHLC de timeframe mayor desde el dataframe base (resampling).
+        Ej: M15 -> H1, H4, D1
+        
+        Args:
+            timeframe_destino: Timeframe destino ("H1", "H4", "D1")
+            
+        Returns:
+            DataFrame con velas OHLC resampleadas
+        """
+        reglas = {
+            "M1": "1min", "M3": "3min", "M5": "5min", "M15": "15min", 
+            "M30": "30min", "H1": "1h", "H4": "4h", "D1": "1D", "W1": "1W"
+        }
+        
+        if timeframe_destino not in reglas:
+            raise ValueError(f"No se puede resamplear a {timeframe_destino}")
+        
+        regla = reglas[timeframe_destino]
+        
+        # Resamplear OHLCV
+        agg = self.df.resample(regla).agg({
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }).dropna(subset=["open"])
+        
+        return agg
 
 
 class MultiTimeframeFeed:

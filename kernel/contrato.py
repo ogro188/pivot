@@ -10,6 +10,24 @@ from typing import Optional, List, Dict, Any, Tuple
 import pandas as pd
 
 
+@dataclass
+class GMetrics:
+    """
+    Métricas G precalculadas UNA SOLA VEZ por barra.
+    Evita la triplicación de cálculos de indicadores.
+    """
+    g_atr8: float = 0.0
+    g_atr14: float = 0.0
+    g_atr50: float = 0.0
+    g_ema50_dist: float = 0.0
+    g_ema50_angulo: float = 0.0
+    g_rsi14: float = 0.0
+    g_d1_trend: int = 0
+    g_h4_trend: int = 0
+    g_volatilidad: float = 1.0
+    g_zona: str = "NEUTRAL"  # PREMIUM, DISCOUNT, NEUTRAL
+
+
 # =============================================================================
 # TIPOS BASE PARA SEÑALES Y OVERLAYS
 # =============================================================================

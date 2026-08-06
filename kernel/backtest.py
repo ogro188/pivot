@@ -155,7 +155,9 @@ class BacktestEngine:
         self.contexto: Optional[Contexto] = None
     
     def _crear_contexto(self, feeds: Dict[str, CSVFeed]) -> Contexto:
-        """Crea un contexto desde los feeds actuales."""
+        """Crea un contexto desde los feeds actuales, generando timeframes faltantes por resampling."""
+        from kernel.feeds.csv_resample import resamplear_ohlc
+        
         ctx = Contexto(
             activo=self.activo,
             precio=0.0,
@@ -164,22 +166,29 @@ class BacktestEngine:
             broker_tz_offset=self.activo.timezone,
         )
         
-        # Asignar DataFrames por timeframe
-        for tf, feed in feeds.items():
-            df_attr = f"df_{tf.lower()}"
-            if hasattr(ctx, df_attr):
-                setattr(ctx, df_attr, feed.get_bars(n=500))
+        # Obtener el feed de mayor resolución (base para resampling)
+        tf_base = min(feeds.keys(), key=lambda tf: {"M1":1, "M3":3, "M5":5, "M15":15, "M30":30, "H1":60, "H4":240, "D1":1440}.get(tf, 9999))
+        df_base = feeds[tf_base].df  # Usar todo el historial disponible
         
-        # Inyectar detectores del core si están disponibles
-        try:
-            from core.d0_estructura import EstructuraDetector
-            from core.d5_mss_sweep import MSSDetector
-            
-            # Esto se mejorará en iteraciones futuras
-            ctx.estructura = None
-            ctx.mss_cache = None
-        except ImportError:
-            pass
+        # Asignar DataFrames explícitos y generar los faltantes
+        timeframes_requeridos = getattr(self.estrategia, "timeframes", ["M15", "H1", "H4", "D1"])
+        
+        for tf in timeframes_requeridos:
+            df_attr = f"df_{tf.lower()}"
+            if not hasattr(ctx, df_attr):
+                continue
+                
+            if tf in feeds:
+                # Feed explícito disponible - obtener barras hasta posición actual del feed
+                setattr(ctx, df_attr, feeds[tf].get_bars(n=500) if feeds[tf].idx > 0 else feeds[tf].df.tail(500))
+            elif tf in ["H1", "H4", "D1"]:
+                # Generar por resampling desde el base
+                try:
+                    df_resampled = resamplear_ohlc(df_base, tf).tail(500)
+                    setattr(ctx, df_attr, df_resampled)
+                except Exception as e:
+                    # Si falla el resampling, dejar None pero loguear
+                    pass
         
         return ctx
     
@@ -253,6 +262,27 @@ class BacktestEngine:
         
         # Actualar capital
         self.capital_actual += operacion.pnl_dinero
+        
+        # Fase 8.3: Registrar en dataset ML para entrenamiento futuro
+        try:
+            from kernel.storage import Database
+            detectores = getattr(operacion.señal, 'contexto', {}).get('detectores', [])
+            
+            db = Database("data/pivot.db")
+            db.guardar_resultado_operacion({
+                "timestamp_entrada": operacion.timestamp_entrada.isoformat(),
+                "timestamp_salida": operacion.timestamp_salida.isoformat(),
+                "simbolo": operacion.simbolo,
+                "direccion": operacion.direccion,
+                "detectores_activos": detectores,
+                "pnl_puntos": operacion.pnl_puntos,
+                "razon_salida": operacion.razon_salida,
+                "fue_ganadora": operacion.pnl_puntos > 0,
+                "pnl_dinero": operacion.pnl_dinero,
+            })
+        except Exception as e:
+            # No fallar el backtest si falla la persistencia ML
+            pass
     
     def _gestionar_operaciones_abiertas(self, bar_actual: Dict[str, Any]):
         """Gestiona las operaciones abiertas contra la vela actual."""

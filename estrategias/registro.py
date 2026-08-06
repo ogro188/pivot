@@ -39,3 +39,5 @@ class RegistroEstrategias:
         if not cls:
             raise ValueError(f"Estrategia no encontrada: {nombre}")
         return cls()
+
+registro = RegistroEstrategias()
