@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 # Importar detectores
 import sys
-sys.path.insert(0, '/workspace')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from core.d0_estructura import EstructuraProvider
 from core.d1_ruptura import DetectorD1
