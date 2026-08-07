@@ -7,7 +7,7 @@ import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Callable, Type, Any
+from typing import Dict, List, Optional, Callable, Type, Any, Union
 from collections import deque
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
@@ -66,6 +66,7 @@ class AssetRuntime:
         self._thread: Optional[threading.Thread] = None
         self._queue = deque(maxlen=1000)  # Cola de velas nuevas
         self._operaciones_abiertas: Dict[int, Operacion] = {}
+        self._db_lock = threading.Lock()
         
         # Callbacks
         self.on_signal: Optional[Callable] = None
@@ -97,7 +98,7 @@ class AssetRuntime:
         
         logger.info(f"✓ Runtime {self.simbolo} inicializado")
     
-    def push_candle(self, candle: Candle, timeframe: Timeframe):
+    def push_candle(self, candle: Dict[str, Any], timeframe: str):
         """Encolar nueva vela para procesamiento"""
         self._queue.append((candle, timeframe))
     
@@ -110,7 +111,7 @@ class AssetRuntime:
             except Exception as e:
                 logger.error(f"Error procesando vela {self.simbolo}: {e}")
     
-    def _process_candle(self, candle: Candle, timeframe: Timeframe):
+    def _process_candle(self, candle: Dict[str, Any], timeframe: str):
         """Procesar una vela individual"""
         if not self.contexto or not self.estrategia:
             return
@@ -141,7 +142,7 @@ class AssetRuntime:
         except Exception as e:
             logger.error(f"Error generando señal {self.simbolo}: {e}")
     
-    def _update_contexto(self, candle: Candle, timeframe: Timeframe):
+    def _update_contexto(self, candle: Dict[str, Any], timeframe: str):
         """Actualizar contexto con nueva vela"""
         # Agregar vela al dataframe correspondiente
         tf_name = timeframe.name
@@ -188,10 +189,31 @@ class AssetRuntime:
             razon_entrada=señal.narrativa or "Señal estrategia"
         )
         
-        # Guardar en DB
-        asyncio.create_task(
-            self.db.guardar_operacion(operacion, self.estrategia.nombre)
-        )
+        # Guardar en DB (síncrono, funciona desde cualquier hilo)
+        try:
+            with self._db_lock:
+                conn = self.db._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO operaciones (estrategia, simbolo, timeframe, 
+                    timestamp_abertura, tipo, precio_entrada, cantidad, 
+                    stop_loss, take_profit, estado) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    self.estrategia.nombre,
+                    operacion.simbolo,
+                    operacion.timeframe.name if hasattr(operacion.timeframe, 'name') else str(operacion.timeframe),
+                    operacion.timestamp_abertura,
+                    operacion.tipo.value if hasattr(operacion.tipo, 'value') else str(operacion.tipo),
+                    operacion.precio_entrada,
+                    operacion.cantidad,
+                    operacion.stop_loss,
+                    operacion.take_profit,
+                    operacion.estado
+                ))
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Error guardando operación: {e}")
         
         # Tracking local
         self._operaciones_abiertas[id(operacion)] = operacion
@@ -205,7 +227,7 @@ class AssetRuntime:
         if self.on_operation:
             self.on_operation(self.simbolo, operacion)
     
-    def _gestionar_operaciones(self, candle: Candle):
+    def _gestionar_operaciones(self, candle: Dict[str, Any]):
         """Gestionar operaciones abiertas (TP/SL/expiración)"""
         cerrar = []
         
@@ -236,9 +258,29 @@ class AssetRuntime:
         # Remover operaciones cerradas
         for op_id in cerrar:
             op = self._operaciones_abiertas.pop(op_id)
-            asyncio.create_task(
-                self.db.actualizar_operacion_cierre(id(op), op)
-            )
+            # Actualizar en DB (síncrono, funciona desde cualquier hilo)
+            try:
+                with self._db_lock:
+                    conn = self.db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE operaciones 
+                        SET precio_salida = ?, timestamp_cierre = ?, 
+                            razon_cierre = ?, estado = ?,
+                            pnl = ?, pnl_porcentaje = ?
+                        WHERE id = ?
+                    """, (
+                        op.precio_salida,
+                        op.timestamp_cierre,
+                        op.razon_cierre,
+                        op.estado,
+                        op.pnl,
+                        op.pnl_porcentaje,
+                        id(op)
+                    ))
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Error actualizando operación: {e}")
     
     def _run_loop(self):
         """Bucle principal del hilo"""

@@ -1,12 +1,9 @@
 ```
-# Python cache
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Database
-*.db
 
 # Logs
 *.log
@@ -14,45 +11,21 @@ __pycache__/
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Dependencies
-venv/
 .venv/
-pip-log.txt
-pipenv.lock
+venv/
+node_modules/
 
-# Testing
-.coverage
-htmlcov/
-.coverage.*
-.cache
-.pytest_cache/
-.hypothesis/
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
+# Build artifacts
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+build/
+target/
 
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
 # OS
 .DS_Store

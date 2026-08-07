@@ -490,12 +490,22 @@ class BacktestEngine:
         
         self._precalc = precalc
         
+        # Precalcular métricas G una sola vez
+        ctx_base = self._crear_contexto(feeds)
+        try:
+            from kernel.metricas_g import calcular_metricas_g
+            ctx_base.g_metrics = calcular_metricas_g(ctx_base)
+        except Exception:
+            ctx_base.g_metrics = None
+        
         # Iterar barra a barra
         for bar in ref_feed.iter_barras():
-            # Actualizar contexto
+            # Actualizar contexto reusando el base con g_metrics
             self.contexto = self._crear_contexto(feeds)
             self.contexto.precio = bar["close"]
             self.contexto.tiempo = bar["timestamp"]
+            if ctx_base.g_metrics is not None:
+                self.contexto.g_metrics = ctx_base.g_metrics
             
             # Ejecutar estrategia
             señales = self.estrategia.detectar(self.contexto)
