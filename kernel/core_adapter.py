@@ -44,17 +44,17 @@ class CoreAdapter:
         core_ctx.df_h4 = kernel_ctx.df_h4
         core_ctx.df_d1 = kernel_ctx.df_d1
         
-        # Copiar buffers de indicadores
-        core_ctx.g_atr8_buffer = kernel_ctx.g_atr8_buffer.copy()
-        core_ctx.g_atr14_buffer = kernel_ctx.g_atr14_buffer.copy()
-        core_ctx.g_atr30_buffer = kernel_ctx.g_atr30_buffer.copy()
-        core_ctx.g_ema21_buffer = kernel_ctx.g_ema21_buffer.copy()
-        core_ctx.g_ema50_buffer = kernel_ctx.g_ema50_buffer.copy()
-        core_ctx.g_rsi14_buffer = kernel_ctx.g_rsi14_buffer.copy()
-        core_ctx.g_ema50_d1_buffer = kernel_ctx.g_ema50_d1_buffer.copy()
-        core_ctx.g_ema200_d1_buffer = kernel_ctx.g_ema200_d1_buffer.copy()
-        core_ctx.g_ema20_h4_buffer = kernel_ctx.g_ema20_h4_buffer.copy()
-        core_ctx.g_ema50_h4_buffer = kernel_ctx.g_ema50_h4_buffer.copy()
+        # Copiar buffers de indicadores (referencias directas, no copias)
+        core_ctx.g_atr8_buffer = kernel_ctx.g_atr8_buffer
+        core_ctx.g_atr14_buffer = kernel_ctx.g_atr14_buffer
+        core_ctx.g_atr30_buffer = kernel_ctx.g_atr30_buffer
+        core_ctx.g_ema21_buffer = kernel_ctx.g_ema21_buffer
+        core_ctx.g_ema50_buffer = kernel_ctx.g_ema50_buffer
+        core_ctx.g_rsi14_buffer = kernel_ctx.g_rsi14_buffer
+        core_ctx.g_d1_trend_buffer = kernel_ctx.g_d1_trend_buffer
+        core_ctx.g_h4_trend_buffer = kernel_ctx.g_h4_trend_buffer
+        core_ctx.g_volatilidad_buffer = kernel_ctx.g_volatilidad_buffer
+        core_ctx.g_zona_buffer = kernel_ctx.g_zona_buffer
         
         # Copiar métricas G
         core_ctx.g1 = kernel_ctx.g1
@@ -183,47 +183,20 @@ def calcular_indicadores_core(df: pd.DataFrame) -> Dict[str, List[float]]:
     }
 
 
-def actualizar_contexto_con_indicadores(ctx: KernelContexto, timeframe: str = "M15"):
-    """
-    Actualiza los buffers de indicadores del contexto usando los dataframes disponibles.
-    
-    Args:
-        ctx: Contexto del kernel a actualizar
-        timeframe: Timeframe principal para calcular indicadores
-    """
+def actualizar_contexto_con_indicadores(ctx, timeframe: str = "M15"):
+    """Actualiza buffers de indicadores leyendo columnas precalculadas del DataFrame."""
     df = getattr(ctx, f"df_{timeframe.lower()}", None)
-    if df is None or len(df) == 0:
+    if df is None or df.empty:
         return
     
-    # Calcular indicadores
-    indicadores = calcular_indicadores_core(df)
-    
-    # Actualizar buffers
-    for key, value in indicadores.items():
-        if hasattr(ctx, key):
-            setattr(ctx, key, value)
-    
-    # Calcular métricas G básicas
-    if len(indicadores.get('g_atr8_buffer', [])) > 0 and len(indicadores.get('g_atr14_buffer', [])) > 0:
-        ctx.g1 = indicadores['g_atr8_buffer'][0] / indicadores['g_atr14_buffer'][0] if indicadores['g_atr14_buffer'][0] > 0 else 1.0
-    
-    # Volume ratio (simplificado)
-    if 'tick_volume' in df.columns and len(df) > 20:
-        vol_actual = df['tick_volume'].iloc[-1]
-        vol_promedio = df['tick_volume'].iloc[-21:-1].mean()
-        ctx.g2 = vol_actual / vol_promedio if vol_promedio > 0 else 1.0
-    
-    # Trend strength (basado en EMA)
-    if len(indicadores.get('g_ema21_buffer', [])) > 0 and len(indicadores.get('g_ema50_buffer', [])) > 0:
-        ema21 = indicadores['g_ema21_buffer'][0]
-        ema50 = indicadores['g_ema50_buffer'][0]
-        if ema50 > 0:
-            ctx.g3 = abs(ema21 - ema50) / ema50
-        else:
-            ctx.g3 = 0.0
-    
-    # Volatility regime (basado en ATR)
-    if len(indicadores.get('g_atr14_buffer', [])) > 10:
-        atr_reciente = indicadores['g_atr14_buffer'][0]
-        atr_promedio = sum(indicadores['g_atr14_buffer'][:10]) / 10
-        ctx.g4 = atr_reciente / atr_promedio if atr_promedio > 0 else 1.0
+    # Si el DataFrame tiene indicadores precalculados, usarlos directamente
+    if 'atr8' in df.columns:
+        ctx.g_atr8_buffer.append(float(df['atr8'].iloc[-1]))
+        ctx.g_atr14_buffer.append(float(df['atr14'].iloc[-1]))
+        ctx.g_atr30_buffer.append(float(df['atr30'].iloc[-1]))
+        ctx.g_ema21_buffer.append(float(df['ema21'].iloc[-1]))
+        ctx.g_ema50_buffer.append(float(df['ema50'].iloc[-1]))
+        ctx.g_rsi14_buffer.append(float(df['rsi14'].iloc[-1]))
+    else:
+        # Fallback: recalcular (solo primera carga o CSV antiguo)
+        calcular_indicadores_core(ctx, timeframe)
