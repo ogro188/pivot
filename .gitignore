@@ -1,33 +1,34 @@
 ```
-# Python
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
+# Data files
+data/*.csv
+
+# Environment variables
+.env
+.env.local
+*.env.*
+
 # Logs
 *.log
 
-# Environment
-.env
-.env.local
-.env.*
+# Coverage reports
+.coverage
+htmlcov/
+coverage/
 
-# Dependencies
-.venv/
-venv/
-node_modules/
-
-# Build artifacts
-dist/
-build/
-target/
-
-# Editors
+# IDE specific
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# OS
+# OS specific
 .DS_Store
 Thumbs.db
 ```

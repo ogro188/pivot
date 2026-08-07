@@ -14,7 +14,7 @@ def calcular_zona_premium_discount(m15: pd.DataFrame, h4: pd.DataFrame) -> str:
     Determina si el precio está en zona PREMIUM, DISCOUNT o NEUTRAL.
     Usa el rango de las últimas 50 velas H4.
     """
-    if len(h4) < 50:
+    if m15 is None or h4 is None or len(h4) < 50:
         return "NEUTRAL"
     
     # Rango H4 últimas 50 velas
@@ -48,9 +48,9 @@ def calcular_metricas_g(ctx) -> GMetrics:
     Returns:
         GMetrics con todas las métricas calculadas
     """
-    m15 = ctx.m15
-    h4 = ctx.h4
-    d1 = ctx.d1
+    m15 = ctx.df_m15
+    h4 = ctx.df_h4
+    d1 = ctx.df_d1
     
     # ATRs
     atr8 = ta.atr(m15["high"], m15["low"], m15["close"], length=8).iloc[-1]

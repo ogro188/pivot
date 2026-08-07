@@ -181,8 +181,24 @@ class PivotRadarEngine:
         # Cargar pending desde SQLite en lugar de CSV - Migración G12
         import asyncio
         loop = asyncio.new_event_loop()
-        self.g_pending_signals, self.g_pending_ids = loop.run_until_complete(self.db.cargar_cola_pendientes())
+        pending_dicts, pending_ids = loop.run_until_complete(self.db.cargar_cola_pendientes())
         loop.close()
+
+        self.g_pending_signals = []
+        self.g_pending_ids = set()
+        for p in pending_dicts:
+            try:
+                sid = int(p['signal_id']) if p.get('signal_id') else 0
+                sig = Signal()
+                sig.id = sid
+                sig.symbol = p.get('symbol', self.symbol)
+                sig.detector = p.get('detector', '')
+                sig.entry_time = datetime.fromisoformat(p['entry_time']) if p.get('entry_time') else datetime(1970, 1, 1)
+                sig.csv_written = True
+                self.g_pending_signals.append(sig)
+                self.g_pending_ids.add(sid)
+            except Exception:
+                pass
 
         print("=== PivotRadar Hybrid v8.0 Python ===")
         print(f"Símbolo: {self.symbol} | Timeframe: M15")
