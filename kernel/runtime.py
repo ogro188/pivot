@@ -14,7 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 
 from .contrato import Estrategia, Contexto, Señal, ActivoInfo
-from .backtest import BacktestEngine, Operacion
+from .backtest import BacktestEngine
+try:
+    from .backtest import Operacion
+except ImportError:
+    Operacion = object  # stub temporal
 from .storage import Database, get_database
 from .feeds.csv import CSVFeed
 from .core_adapter import CoreAdapter
@@ -145,17 +149,19 @@ class AssetRuntime:
     def _update_contexto(self, candle: Dict[str, Any], timeframe: str):
         """Actualizar contexto con nueva vela"""
         # Agregar vela al dataframe correspondiente
-        tf_name = timeframe.name
+        tf_name = timeframe.name if hasattr(timeframe, 'name') else str(timeframe)
         
-        if tf_name not in self.contexto.df:
-            self.contexto.df[tf_name] = []
+        df_attr = f"df_{tf_name.lower()}"
+        if not hasattr(self.contexto, df_attr):
+            setattr(self.contexto, df_attr, [])
+        df_ref = getattr(self.contexto, df_attr)
         
-        self.contexto.df[tf_name].append(candle)
+        df_ref.append(candle)
         
         # Mantener histórico limitado
         max_bars = 500
-        if len(self.contexto.df[tf_name]) > max_bars:
-            self.contexto.df[tf_name] = self.contexto.df[tf_name][-max_bars:]
+        if len(df_ref) > max_bars:
+            df_ref[:] = df_ref[-max_bars:]
         
         # Actualizar última vela
         self.contexto.ultima_vela = candle
@@ -204,7 +210,7 @@ class AssetRuntime:
                     operacion.simbolo,
                     operacion.timeframe.name if hasattr(operacion.timeframe, 'name') else str(operacion.timeframe),
                     operacion.timestamp_abertura,
-                    operacion.tipo.value if hasattr(operacion.tipo, 'value') else str(operacion.tipo),
+                    str(operacion.tipo.value) if hasattr(operacion.tipo, 'value') else str(operacion.tipo),
                     operacion.precio_entrada,
                     operacion.cantidad,
                     operacion.stop_loss,
@@ -235,15 +241,16 @@ class AssetRuntime:
             razon_cierre = None
             
             # Verificar TP
-            if op.tipo.value == 'LONG' and candle.close >= op.take_profit:
+            tipo_str = str(op.tipo.value) if hasattr(op.tipo, 'value') else str(op.tipo)
+            if tipo_str.upper() == 'LONG' and candle.close >= op.take_profit:
                 razon_cierre = "Take Profit"
-            elif op.tipo.value == 'SHORT' and candle.close <= op.take_profit:
+            elif tipo_str.upper() == 'SHORT' and candle.close <= op.take_profit:
                 razon_cierre = "Take Profit"
             
             # Verificar SL
-            elif op.tipo.value == 'LONG' and candle.close <= op.stop_loss:
+            elif tipo_str.upper() == 'LONG' and candle.close <= op.stop_loss:
                 razon_cierre = "Stop Loss"
-            elif op.tipo.value == 'SHORT' and candle.close >= op.stop_loss:
+            elif tipo_str.upper() == 'SHORT' and candle.close >= op.stop_loss:
                 razon_cierre = "Stop Loss"
             
             # Cerrar si corresponde

@@ -225,6 +225,20 @@ class EstrategiaPivot(Estrategia):
             direccion=direccion,
         )
         
+        # Calcular niveles de entrada, SL y TP (definir antes de usar en alertas)
+        precio_actual = ctx.precio
+        atr14 = ctx.g_atr14_buffer[0] if ctx.g_atr14_buffer else 0.0
+
+        if atr14 <= 0:
+            return []
+
+        if direccion == 1:
+            stop_loss = precio_actual - (atr14 * 1.5)
+            take_profit = precio_actual + (atr14 * self.config.reward_ratio_min * 1.5)
+        else:
+            stop_loss = precio_actual + (atr14 * 1.5)
+            take_profit = precio_actual - (atr14 * self.config.reward_ratio_min * 1.5)
+        
         # Procesar señales por alertas (Tarea 9)
         if self.alertas is not None and len(detectores_activos) >= 2:
             for detector_nombre in detectores_activos:
@@ -285,21 +299,6 @@ class EstrategiaPivot(Estrategia):
         # Verificar confianza mínima
         if confianza < self.config.confianza_minima:
             return []
-        
-        # Calcular niveles de entrada, SL y TP
-        precio_actual = ctx.precio
-        atr14 = ctx.g_atr14_buffer[0] if ctx.g_atr14_buffer else 0.0
-        
-        if atr14 <= 0:
-            return []
-        
-        # Definir SL y TP basados en ATR
-        if direccion == 1:  # LONG
-            stop_loss = precio_actual - (atr14 * 1.5)
-            take_profit = precio_actual + (atr14 * self.config.reward_ratio_min * 1.5)
-        else:  # SHORT
-            stop_loss = precio_actual + (atr14 * 1.5)
-            take_profit = precio_actual - (atr14 * self.config.reward_ratio_min * 1.5)
         
         # Crear narrativa
         detectores_str = ", ".join(detectores_activos)
