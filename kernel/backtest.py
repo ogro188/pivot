@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 
 from kernel.contrato import Contexto, Señal, ActivoInfo, Estrategia, Overlay, Metrica
+from typing import Any
 from kernel.feeds.csv import CSVFeed, MultiTimeframeFeed
 
 
@@ -125,6 +126,7 @@ class BacktestEngine:
         slippage_pips: float = 0.0,
         comision_lote: float = 0.0,
         max_operaciones_simultaneas: int = 3,
+        db: Any = None,
     ):
         """
         Inicializa el motor de backtest.
@@ -137,6 +139,7 @@ class BacktestEngine:
             slippage_pips: Slippage estimado en pips
             comision_lote: Comisión por lote
             max_operaciones_simultaneas: Máximo de operaciones simultáneas
+            db: Instancia de Database para persistencia (opcional)
         """
         self.estrategia = estrategia
         self.activo = activo
@@ -146,6 +149,7 @@ class BacktestEngine:
         self.slippage_puntos = slippage_pips * activo.valor_pip * 10
         self.comision_puntos = comision_lote / activo.tamano_lote / activo.valor_pip / 10
         self.max_operaciones_simultaneas = max_operaciones_simultaneas
+        self.db = db
         
         # Estado del backtest
         self.capital_actual = capital_inicial
@@ -269,26 +273,24 @@ class BacktestEngine:
         # Actualar capital
         self.capital_actual += operacion.pnl_dinero
         
-        # Fase 8.3: Registrar en dataset ML para entrenamiento futuro
-        try:
-            from kernel.storage import Database
-            detectores = getattr(operacion.señal, 'contexto', {}).get('detectores', [])
-            
-            db = Database("data/pivot.db")
-            db.guardar_resultado_operacion({
-                "timestamp_entrada": operacion.timestamp_entrada.isoformat(),
-                "timestamp_salida": operacion.timestamp_salida.isoformat(),
-                "simbolo": operacion.simbolo,
-                "direccion": operacion.direccion,
-                "detectores_activos": detectores,
-                "pnl_puntos": operacion.pnl_puntos,
-                "razon_salida": operacion.razon_salida,
-                "fue_ganadora": operacion.pnl_puntos > 0,
-                "pnl_dinero": operacion.pnl_dinero,
-            })
-        except Exception as e:
-            # No fallar el backtest si falla la persistencia ML
-            pass
+        # Fase 8.3: Registrar en dataset ML para entrenamiento futuro (Tarea 10)
+        if self.db is not None:
+            try:
+                detectores = getattr(operacion.señal, 'contexto', {}).get('detectores', [])
+                
+                self.db.guardar_resultado_operacion({
+                    "timestamp_entrada": operacion.timestamp_entrada.isoformat(),
+                    "timestamp_salida": operacion.timestamp_salida.isoformat(),
+                    "simbolo": operacion.simbolo,
+                    "direccion": operacion.direccion,
+                    "detectores_activos": detectores,
+                    "pnl_puntos": operacion.pnl_puntos,
+                    "razon_salida": operacion.razon_salida,
+                    "fue_ganadora": operacion.pnl_puntos > 0,
+                    "pnl_dinero": operacion.pnl_dinero,
+                })
+            except Exception as e:
+                logger.error(f"Error persistiendo operación ML: {e}")
     
     def _gestionar_operaciones_abiertas(self, bar_actual: Dict[str, Any]):
         """Gestiona las operaciones abiertas contra la vela actual."""
@@ -488,12 +490,22 @@ class BacktestEngine:
         
         self._precalc = precalc
         
+        # Precalcular métricas G una sola vez
+        ctx_base = self._crear_contexto(feeds)
+        try:
+            from kernel.metricas_g import calcular_metricas_g
+            ctx_base.g_metrics = calcular_metricas_g(ctx_base)
+        except Exception:
+            ctx_base.g_metrics = None
+        
         # Iterar barra a barra
         for bar in ref_feed.iter_barras():
-            # Actualizar contexto
+            # Actualizar contexto reusando el base con g_metrics
             self.contexto = self._crear_contexto(feeds)
             self.contexto.precio = bar["close"]
             self.contexto.tiempo = bar["timestamp"]
+            if ctx_base.g_metrics is not None:
+                self.contexto.g_metrics = ctx_base.g_metrics
             
             # Ejecutar estrategia
             señales = self.estrategia.detectar(self.contexto)

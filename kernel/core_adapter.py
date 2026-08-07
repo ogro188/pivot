@@ -199,4 +199,12 @@ def actualizar_contexto_con_indicadores(ctx, timeframe: str = "M15"):
         ctx.g_rsi14_buffer.append(float(df['rsi14'].iloc[-1]))
     else:
         # Fallback: recalcular (solo primera carga o CSV antiguo)
-        calcular_indicadores_core(ctx, timeframe)
+        # Nota: calcular_indicadores_core solo recibe df, no ctx
+        indicadores = calcular_indicadores_core(df)
+        if indicadores:
+            ctx.g_atr8_buffer.extend(indicadores.get('g_atr8_buffer', []))
+            ctx.g_atr14_buffer.extend(indicadores.get('g_atr14_buffer', []))
+            ctx.g_atr30_buffer.extend(indicadores.get('g_atr30_buffer', []))
+            ctx.g_ema21_buffer.extend(indicadores.get('g_ema21_buffer', []))
+            ctx.g_ema50_buffer.extend(indicadores.get('g_ema50_buffer', []))
+            ctx.g_rsi14_buffer.extend(indicadores.get('g_rsi14_buffer', []))

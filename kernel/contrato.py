@@ -212,6 +212,13 @@ class Contexto:
     g_ema200_d1_buffer: List[float] = field(default_factory=list)
     g_ema20_h4_buffer: List[float] = field(default_factory=list)
     g_ema50_h4_buffer: List[float] = field(default_factory=list)
+    g_d1_trend_buffer: List[int] = field(default_factory=list)
+    g_h4_trend_buffer: List[int] = field(default_factory=list)
+    g_volatilidad_buffer: List[float] = field(default_factory=list)
+    g_zona_buffer: List[str] = field(default_factory=list)
+    
+    # Métricas G precalculadas (opcional, inyectado desde backtest)
+    g_metrics: Optional[Any] = None
     
     # Caches de indicadores por timeframe
     _indicadores_cache: Dict[str, IndicadorCache] = field(default_factory=dict, repr=False)
