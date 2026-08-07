@@ -7,13 +7,13 @@ import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Callable, Type
+from typing import Dict, List, Optional, Callable, Type, Any
 from collections import deque
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 import time
 
-from .contrato import Estrategia, Contexto, Señal, Candle, Timeframe, ActivoInfo
+from .contrato import Estrategia, Contexto, Señal, ActivoInfo
 from .backtest import BacktestEngine, Operacion
 from .storage import Database, get_database
 from .feeds.csv import CSVFeed
@@ -27,8 +27,8 @@ class RuntimeConfig:
     """Configuración del runtime"""
     simbolos: List[str]
     estrategia_cls: Type[Estrategia]
-    timeframe_principal: Timeframe = Timeframe.M15
-    timeframes_secundarios: List[Timeframe] = None
+    timeframe_principal: str = "M15"
+    timeframes_secundarios: List[str] = None
     capital_inicial: float = 10000.0
     riesgo_por_operacion: float = 1.0
     usar_backtest_data: bool = False
@@ -37,7 +37,7 @@ class RuntimeConfig:
     
     def __post_init__(self):
         if self.timeframes_secundarios is None:
-            self.timeframes_secundarios = [Timeframe.H1, Timeframe.H4, Timeframe.D1]
+            self.timeframes_secundarios = ["H1", "H4", "D1"]
 
 
 class AssetRuntime:

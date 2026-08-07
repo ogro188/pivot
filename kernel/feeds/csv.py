@@ -74,6 +74,32 @@ class CSVFeed:
         self.df = self._cargar_csv()
         self.idx = 0
         
+    def _precalcular_indicadores(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Precalcula indicadores técnicos una sola vez al cargar el CSV."""
+        if df.empty or len(df) < 50:
+            return df
+        
+        # True Range
+        tr1 = df['high'] - df['low']
+        tr2 = abs(df['high'] - df['close'].shift(1))
+        tr3 = abs(df['low'] - df['close'].shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        df['atr8'] = tr.ewm(span=8, adjust=False).mean()
+        df['atr14'] = tr.ewm(span=14, adjust=False).mean()
+        df['atr30'] = tr.ewm(span=30, adjust=False).mean()
+        df['ema21'] = df['close'].ewm(span=21, adjust=False).mean()
+        df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
+        
+        # RSI 14
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df['rsi14'] = 100 - (100 / (1 + rs))
+        
+        return df
+    
     def _cargar_csv(self) -> pd.DataFrame:
         """Carga y valida el CSV."""
         # Leer CSV
@@ -147,6 +173,9 @@ class CSVFeed:
             else:
                 fecha_fin = self.fecha_fin.astimezone(self.tz)
             df = df[df.index <= fecha_fin]
+        
+        # Precalcular indicadores una sola vez
+        df = self._precalcular_indicadores(df)
         
         return df
     
