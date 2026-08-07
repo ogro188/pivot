@@ -189,13 +189,13 @@ class TestAPICSVFeedFilter:
         )
         total_velas = len(feed_full.df)
         
-        # Con filtro estrecho
+        # Con filtro estrecho (ajustado al rango real de datos: Julio-Diciembre 2024)
         feed_filtered = CSVFeed(
             path="data/eurusd_m15.csv",
             timeframe="M15",
             symbol="EURUSD",
-            fecha_inicio=datetime(2024, 1, 2),
-            fecha_fin=datetime(2024, 1, 3)
+            fecha_inicio=datetime(2024, 7, 2),
+            fecha_fin=datetime(2024, 7, 3)
         )
         filtered_velas = len(feed_filtered.df)
         
@@ -205,5 +205,5 @@ class TestAPICSVFeedFilter:
         # Verificar que las fechas están dentro del rango
         primera_fecha = feed_filtered.df.index[0]
         ultima_fecha = feed_filtered.df.index[-1]
-        assert primera_fecha >= datetime(2024, 1, 2).replace(tzinfo=feed_filtered.tz)
-        assert ultima_fecha <= datetime(2024, 1, 3).replace(tzinfo=feed_filtered.tz)
+        assert primera_fecha >= datetime(2024, 7, 2).replace(tzinfo=feed_filtered.tz)
+        assert ultima_fecha <= datetime(2024, 7, 3).replace(tzinfo=feed_filtered.tz)

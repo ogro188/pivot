@@ -137,6 +137,24 @@ class EstrategiaPivot(Estrategia):
         # Inicializar adaptador
         self.adapter = CoreAdapter()
         
+        # Inicializar WilsonScorer por instancia (Tarea 6)
+        from estrategias.pivot.scoring import WilsonScorer
+        self.scorer = WilsonScorer(
+            z_score=params.get("z_score", 1.96),
+            min_muestras=params.get("min_muestras", 30)
+        )
+        self._cargar_historial_scoring()
+        
+        # Inicializar AlertasEngine (Tarea 9)
+        try:
+            from core.alertas import AlertasEngine
+            self.alertas = AlertasEngine(
+                symbol=activo.simbolo if activo else "EURUSD",
+                ntfy_topic=params.get("ntfy_topic", "pivot_alerts")
+            )
+        except Exception:
+            self.alertas = None
+        
         # Actualizar parámetros en detectores (se hará en cada iteración del backtest)
     
     def detectar(self, ctx: Contexto) -> List[Señal]:
@@ -201,13 +219,54 @@ class EstrategiaPivot(Estrategia):
         
         direccion = max(direcciones, key=direcciones.get)
         
-        # Calcular confianza usando Wilson Score (Fase 7.2)
-        from estrategias.pivot.scoring import scorer_global
-        
-        confianza, explicacion_scoring = scorer_global.obtener_confianza(
+        # Calcular confianza usando Wilson Score (Tarea 6 - instancia por estrategia)
+        confianza, explicacion_scoring = self.scorer.obtener_confianza(
             detectores_activos=detectores_activos,
             direccion=direccion,
         )
+        
+        # Procesar señales por alertas (Tarea 9)
+        if self.alertas is not None and len(detectores_activos) >= 2:
+            for detector_nombre in detectores_activos:
+                try:
+                    # Construir señal simplificada para alertas
+                    from core.estructuras import Signal
+                    sig = Signal()
+                    sig.symbol = ctx.activo.simbolo if ctx.activo else "EURUSD"
+                    sig.detector = detector_nombre
+                    sig.direction = direccion
+                    sig.entry_time = ctx.tiempo
+                    sig.entry_price = precio_actual
+                    sig.session = ctx.session or "UNKNOWN"
+                    sig.kill_zone = ctx.kill_zone or "NONE"
+                    sig.hipotesis_prob_min = confianza
+                    sig.hipotesis_prob_max = min(100, confianza + 10)
+                    sig.hipotesis_expiry_velas = self.config.expiracion_velas
+                    sig.hipotesis_expiry_minutos = self.config.expiracion_velas * 15
+                    sig.conviccion = "ALTA" if confianza > 75 else "MEDIA" if confianza > 60 else "BAJA"
+                    sig.hipotesis_causa = f"Setup {detector_nombre} en {sig.symbol}"
+                    sig.hipotesis_efecto = f"Entrada {'LONG' if direccion == 1 else 'SHORT'}"
+                    sig.hipotesis_razon = f"Detectores: {', '.join(detectores_activos)}"
+                    sig.hipotesis_invalidez = f"SL: {stop_loss:.5f}"
+                    sig.hipotesis_objetivo = take_profit
+                    sig.regimen_volatilidad = ctx.regimen_vol or "NORMAL"
+                    sig.velocidad_aproximacion = confianza
+                    sig.br = 0.5
+                    sig.bs = 0.5
+                    sig.hipotesis_zona = ctx.g_zona_buffer[0] if ctx.g_zona_buffer else "NEUTRO"
+                    sig.mss_aligned = True
+                    sig.ob_impulse_atr = atr14
+                    sig.mss_direction = "UP" if direccion == 1 else "DOWN"
+                    sig.displacement_post_sweep = True
+                    sig.toques_nivel = 2
+                    sig.equal_hl_detected = False
+                    sig.sweep_volume_ratio = 1.5
+                    sig.tipo = "PIVOT"
+                    
+                    alert_text = self.alertas.build_alert_text(sig)
+                    self.alertas.queue_alert(alert_text)
+                except Exception:
+                    pass  # No romper el flujo si alertas falla
         
         # Ajustar por tendencia D1
         if self.config.usar_trend_d1 and ctx.trend_d1 != "NEUTRO":
@@ -308,6 +367,33 @@ class EstrategiaPivot(Estrategia):
         )
         
         return [señal]
+    
+    def _cargar_historial_scoring(self):
+        """Carga historial de señales previas desde la base de datos (Tarea 6)."""
+        try:
+            from kernel.storage import get_database
+            db = get_database()
+            with db._lock:
+                cursor = db.conn.execute(
+                    "SELECT detectores_activos, direccion, fue_ganadora FROM signals_ml_dataset WHERE fue_ganadora IS NOT NULL LIMIT 500"
+                )
+                filas = cursor.fetchall()
+                for fila in filas:
+                    detectores_str = fila[0] if fila[0] else ""
+                    # Parsear detectores (formato JSON o string separado por comas)
+                    if detectores_str:
+                        import json
+                        try:
+                            detectores = json.loads(detectores_str) if detectores_str.startswith('[') else detectores_str.split(',')
+                        except Exception:
+                            detectores = detectores_str.split(',')
+                    else:
+                        continue
+                    direccion = fila[1]
+                    resultado = fila[2] == 1
+                    self.scorer.registrar_resultado(detectores, direccion, resultado)
+        except Exception:
+            pass  # Si no hay datos, empezar fresco
     
     def on_backtest_tick(self, ctx: Contexto, operacion_abierta: bool) -> List[Señal]:
         """Hook especial para backtesting (opcional)."""
