@@ -22,6 +22,9 @@ class Database:
     def _get_connection(self) -> sqlite3.Connection:
         if self._conn is None:
             self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA synchronous=NORMAL")
+            self._conn.commit()
             self._conn.row_factory = sqlite3.Row
         return self._conn
     
@@ -400,8 +403,8 @@ class Database:
 
 _db_instance: Optional[Database] = None
 
-def get_database(db_path: str = "data/pivot.db") -> Database:
+def get_database(db_path: str = "data/pivot.db", force_new: bool = False) -> Database:
     global _db_instance
-    if _db_instance is None:
+    if force_new or _db_instance is None:
         _db_instance = Database(db_path)
     return _db_instance

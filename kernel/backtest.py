@@ -124,6 +124,7 @@ class BacktestEngine:
         riesgo_por_operacion: float = 0.01,
         slippage_pips: float = 0.0,
         comision_lote: float = 0.0,
+        max_operaciones_simultaneas: int = 3,
     ):
         """
         Inicializa el motor de backtest.
@@ -135,6 +136,7 @@ class BacktestEngine:
             riesgo_por_operacion: % del capital a arriesgar por operación
             slippage_pips: Slippage estimado en pips
             comision_lote: Comisión por lote
+            max_operaciones_simultaneas: Máximo de operaciones simultáneas
         """
         self.estrategia = estrategia
         self.activo = activo
@@ -143,6 +145,7 @@ class BacktestEngine:
         # Convertir pips a puntos (1 pip = 10 puntos para EURUSD)
         self.slippage_puntos = slippage_pips * activo.valor_pip * 10
         self.comision_puntos = comision_lote / activo.tamano_lote / activo.valor_pip / 10
+        self.max_operaciones_simultaneas = max_operaciones_simultaneas
         
         # Estado del backtest
         self.capital_actual = capital_inicial
@@ -182,9 +185,12 @@ class BacktestEngine:
                 # Feed explícito disponible - obtener barras hasta posición actual del feed
                 setattr(ctx, df_attr, feeds[tf].get_bars(n=500) if feeds[tf].idx > 0 else feeds[tf].df.tail(500))
             elif tf in ["H1", "H4", "D1"]:
-                # Generar por resampling desde el base
+                # Generar por resampling desde el base o usar precálculo
                 try:
-                    df_resampled = resamplear_ohlc(df_base, tf).tail(500)
+                    if hasattr(self, '_precalc') and tf in self._precalc:
+                        df_resampled = self._precalc[tf].tail(500)
+                    else:
+                        df_resampled = resamplear_ohlc(df_base, tf).tail(500)
                     setattr(ctx, df_attr, df_resampled)
                 except Exception as e:
                     # Si falla el resampling, dejar None pero loguear
@@ -469,6 +475,19 @@ class BacktestEngine:
         ref_timeframe = min(feeds.keys(), key=lambda tf: CSVFeed.TIMEFRAME_MAP.get(tf, 999999))
         ref_feed = feeds[ref_timeframe]
         
+        # Precalcular timeframes superiores una sola vez
+        from kernel.feeds.csv_resample import resamplear_ohlc
+        df_base_full = ref_feed.get_bars(n=10000) if ref_feed.idx > 0 else ref_feed.df
+        precalc = {}
+        for tf in ["H1", "H4", "D1"]:
+            if tf != ref_timeframe:
+                try:
+                    precalc[tf] = resamplear_ohlc(df_base_full, tf)
+                except Exception:
+                    pass
+        
+        self._precalc = precalc
+        
         # Iterar barra a barra
         for bar in ref_feed.iter_barras():
             # Actualizar contexto
@@ -486,7 +505,7 @@ class BacktestEngine:
                 self.señales_generadas.append(señal)
                 
                 # Abrir operación si hay espacio
-                if len(self.operaciones_abiertas) < 3:  # Máximo 3 operaciones simultáneas
+                if len(self.operaciones_abiertas) < self.max_operaciones_simultaneas:  # Máximo configurable
                     precio_entrada = self._aplicar_slippage(bar["close"], señal.direccion)
                     self._abrir_operacion(señal, precio_entrada)
             
