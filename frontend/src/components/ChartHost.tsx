@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi, CandlestickData } from 'lightweight-charts'
+import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts'
 import { CandleDTO } from '../store'
 
 export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
@@ -33,7 +33,7 @@ export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return
     const data: CandlestickData[] = candles.map((c) => ({
-      time: c.time / 1000,
+      time: c.time as UTCTimestamp,
       open: c.open, high: c.high, low: c.low, close: c.close
     }))
     seriesRef.current.setData(data)

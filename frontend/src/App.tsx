@@ -34,8 +34,8 @@ function App() {
           if (msg.type === 'signal' && msg.data) {
             addSignal(msg.data)
           }
-          if (msg.type === 'tick' && msg.data) {
-            setAssetPrice(msg.asset, msg.data.price)
+          if (msg.type === 'tick' && msg.asset && msg.price) {
+            setAssetPrice(msg.asset, msg.price)
           }
           if (msg.type === 'consola' && msg.data) {
             addLog(msg.data)

@@ -1,12 +1,20 @@
-```
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
+# Virtual environments
+.venv/
+venv/
+env/
+
 # Data files
 data/*.csv
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/ntfy_config.json
 
 # Environment variables
 .env
@@ -21,6 +29,16 @@ data/*.csv
 htmlcov/
 coverage/
 
+# Pytest
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+npm-debug.log*
+
 # IDE specific
 .vscode/
 .idea/
@@ -31,4 +49,3 @@ coverage/
 # OS specific
 .DS_Store
 Thumbs.db
-```

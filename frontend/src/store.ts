@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 
 export interface SignalDTO {
-  id: number; ts: number; asset: string; estrategia: string; etiqueta: string;
+  id: string | number; ts: number; asset: string; estrategia: string; etiqueta: string;
   direccion: number; precio: number; expiracion_velas: number;
   confianza: [number, number]; objetivo?: number; invalidacion?: number;
-  narrativa: string; estado: string;
+  narrativa: string; estado: string; detectores?: string[];
 }
 
 export interface AssetDTO {
