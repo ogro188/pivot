@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, SeriesMarker } from 'lightweight-charts'
-import { CandleDTO, SignalDTO } from '../store'
+import { CandleDTO, SignalDTO, AssetDTO } from '../store'
 
 interface ChartHostProps {
   candles: CandleDTO[]
   signals?: SignalDTO[]
   height?: number
+  asset?: AssetDTO
 }
 
-export default function ChartHost({ candles, signals = [], height = 400 }: ChartHostProps) {
+export default function ChartHost({ candles, signals = [], height = 400, asset }: ChartHostProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -21,9 +22,17 @@ export default function ChartHost({ candles, signals = [], height = 400 }: Chart
       width: containerRef.current.clientWidth,
       height,
     })
+    const priceFormat = asset
+      ? {
+          type: 'price' as const,
+          precision: Math.max(0, Math.round(-Math.log10(asset.punto))),
+          minMove: asset.tick_size || asset.punto,
+        }
+      : { type: 'price' as const, precision: 2, minMove: 0.01 }
     const series = chart.addCandlestickSeries({
       upColor: '#10b981', downColor: '#ef4444', borderUpColor: '#10b981', borderDownColor: '#ef4444',
-      wickUpColor: '#10b981', wickDownColor: '#ef4444'
+      wickUpColor: '#10b981', wickDownColor: '#ef4444',
+      priceFormat,
     })
     chartRef.current = chart
     seriesRef.current = series
@@ -34,7 +43,7 @@ export default function ChartHost({ candles, signals = [], height = 400 }: Chart
     }
     window.addEventListener('resize', handleResize)
     return () => { window.removeEventListener('resize', handleResize); chart.remove() }
-  }, [height])
+  }, [height, asset])
 
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return

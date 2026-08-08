@@ -14,6 +14,8 @@ export interface AssetDTO {
   price: number; session: string; kill_zone: string;
   strategies_active: number; signals_today: number;
   decimales?: number;
+  punto: number;
+  tick_size: number;
 }
 
 export interface CandleDTO {
