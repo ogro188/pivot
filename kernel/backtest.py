@@ -299,8 +299,8 @@ class BacktestEngine:
                 return []
             end = min(n_m15, len(arr))
             start = max(0, end - BUF)
-            seg = arr[start:end]
-            return [float(x) if not np.isnan(x) else 0.0 for x in seg[::-1]]
+            seg = arr[start:end][::-1]
+            return np.nan_to_num(seg, nan=0.0).tolist()
 
         g_atr8_buffer = _buf("atr8")
         g_atr14_buffer = _buf("atr14")
@@ -378,26 +378,29 @@ class BacktestEngine:
     @staticmethod
     def _make_get_volume_ratio(df: pd.DataFrame):
         """Crea la función get_volume_ratio sobre un df recortado a la barra actual."""
-        def _ivol(dfx: pd.DataFrame, shift: int) -> int:
-            if dfx is None or shift < 0 or shift >= len(dfx):
+        if df is None or len(df) == 0:
+            vol_arr = None
+            n = 0
+        else:
+            n = len(df)
+            col = "tick_volume" if "tick_volume" in df.columns else ("volume" if "volume" in df.columns else None)
+            vol_arr = df[col].to_numpy(dtype=float) if col else None
+
+        def _ivol(shift: int) -> int:
+            if vol_arr is None or shift < 0 or shift >= n:
                 return 0
-            row = dfx.iloc[-(shift + 1)]
-            col = "tick_volume" if "tick_volume" in dfx.columns else "volume"
-            try:
-                return int(row[col])
-            except Exception:
-                return 0
+            return int(vol_arr[n - (shift + 1)])
 
         def get_volume_ratio(bar_shift: int, n_lookback: int) -> float:
-            if df is None or len(df) == 0:
+            if vol_arr is None or n == 0:
                 return 1.0
-            vol_signal = _ivol(df, bar_shift)
+            vol_signal = _ivol(bar_shift)
             if vol_signal <= 0:
                 return 1.0
             total = 0
             count = 0
             for i in range(1, n_lookback + 1):
-                v = _ivol(df, bar_shift + i)
+                v = _ivol(bar_shift + i)
                 if v > 0:
                     total += v
                     count += 1
@@ -410,21 +413,29 @@ class BacktestEngine:
     @staticmethod
     def _make_detect_mss_h4(df_h4: Optional[pd.DataFrame]):
         """Crea la función detect_mss_h4 sobre el H4 recortado a la barra actual."""
+        if df_h4 is None or len(df_h4) < 50:
+            h4_high = h4_low = h4_close = None
+            n = 0
+        else:
+            n = len(df_h4)
+            h4_high = df_h4["high"].to_numpy(dtype=float)
+            h4_low = df_h4["low"].to_numpy(dtype=float)
+            h4_close = df_h4["close"].to_numpy(dtype=float)
+
         def detect_mss_h4() -> Tuple[bool, int, str, float]:
-            if df_h4 is None or len(df_h4) < 50:
+            if h4_high is None or n < 50:
                 return (False, 0, "", 0.0)
-            max_scan = min(12, len(df_h4) - 3)
+            max_scan = min(12, n - 3)
             for i in range(1, max_scan + 1):
-                close_i = float(df_h4.iloc[-(i + 1)]["close"])
+                close_i = h4_close[n - (i + 1)]
                 if close_i == 0:
                     continue
                 prior_high = 0.0
                 prior_low = 999999.0
-                window_start = i + 1
-                window_end = min(i + 1 + 20, len(df_h4))
-                for k in range(window_start, window_end):
-                    hk = float(df_h4.iloc[-(k + 1)]["high"])
-                    lk = float(df_h4.iloc[-(k + 1)]["low"])
+                window_end = min(i + 1 + 20, n)
+                for k in range(i + 1, window_end):
+                    hk = h4_high[n - (k + 1)]
+                    lk = h4_low[n - (k + 1)]
                     if hk == 0 or lk == 0:
                         continue
                     if hk > prior_high:
@@ -444,14 +455,22 @@ class BacktestEngine:
     @staticmethod
     def _make_es_zona_premium_discount(df: pd.DataFrame):
         """Crea la función es_zona_premium_discount sobre el M15 recortado."""
+        if df is None or len(df) == 0:
+            high_arr = low_arr = None
+            n = 0
+        else:
+            n = len(df)
+            high_arr = df["high"].to_numpy(dtype=float)
+            low_arr = df["low"].to_numpy(dtype=float)
+
         def es_zona_premium_discount(nivel: float) -> Tuple[bool, str]:
-            if df is None or len(df) == 0:
+            if high_arr is None or n == 0:
                 return (False, "NEUTRO")
             max_high = 0.0
             min_low = 999999.0
-            for i in range(1, min(51, len(df))):
-                h = float(df.iloc[-(i + 1)]["high"])
-                l = float(df.iloc[-(i + 1)]["low"])
+            for i in range(1, min(51, n)):
+                h = high_arr[n - (i + 1)]
+                l = low_arr[n - (i + 1)]
                 if h == 0 or l == 0:
                     break
                 if h > max_high:

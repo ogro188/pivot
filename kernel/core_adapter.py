@@ -4,6 +4,7 @@ Adaptador para integrar los detectores del Core (D0-D5) con el Kernel.
 Permite usar la lógica existente de detectores en el nuevo sistema de backtesting.
 """
 import pandas as pd
+import numpy as np
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from copy import deepcopy
@@ -51,10 +52,12 @@ class CoreAdapter:
         core_ctx.g_ema21_buffer = kernel_ctx.g_ema21_buffer
         core_ctx.g_ema50_buffer = kernel_ctx.g_ema50_buffer
         core_ctx.g_rsi14_buffer = kernel_ctx.g_rsi14_buffer
-        core_ctx.g_d1_trend_buffer = kernel_ctx.g_d1_trend_buffer
-        core_ctx.g_h4_trend_buffer = kernel_ctx.g_h4_trend_buffer
-        core_ctx.g_volatilidad_buffer = kernel_ctx.g_volatilidad_buffer
-        core_ctx.g_zona_buffer = kernel_ctx.g_zona_buffer
+        core_ctx.g_ema50_d1_buffer = kernel_ctx.g_ema50_d1_buffer
+        core_ctx.g_ema200_d1_buffer = kernel_ctx.g_ema200_d1_buffer
+        core_ctx.g_ema20_h4_buffer = kernel_ctx.g_ema20_h4_buffer
+        core_ctx.g_ema50_h4_buffer = kernel_ctx.g_ema50_h4_buffer
+        # Nota: NO se mapean g_d1_trend_buffer, g_h4_trend_buffer, g_volatilidad_buffer,
+        # g_zona_buffer. No existen en core.Contexto (usa strings trend_d1/regimen_vol).
         
         # Copiar métricas G
         core_ctx.g1 = kernel_ctx.g1
@@ -115,18 +118,61 @@ class CoreAdapter:
         resultados = {}
         for detector in detectores:
             try:
+                # Los detectores clasifican internamente (A/B/C/D) y setean sig.tipo.
+                # No se llama detector.clasificar() aquí: firmas varían por detector y
+                # la clasificación externa ya está embebida en detectar().
                 señal = detector.detectar(self.core_ctx)
                 if señal:
-                    clasificacion = detector.clasificar(señal, self.core_ctx)
                     resultados[detector.nombre] = {
                         "senal": señal,
-                        "clasificacion": clasificacion,
-                        "nombre": detector.nombre
+                        "nombre": detector.nombre,
                     }
             except Exception as e:
                 resultados[detector.nombre] = {"error": str(e)}
         
         return resultados
+
+
+def aplicar_parametros(core_ctx, config) -> None:
+    """
+    Copia todos los parámetros inp_* requeridos por los detectores desde la
+    configuración de la estrategia al core.Contexto.
+    
+    Args:
+        core_ctx: core.base.Contexto (ya adaptado)
+        config: ConfiguracionPivot con los atributos de configuración
+    """
+    mapping = {
+        "inp_n_ruptura": "n_ruptura",
+        "inp_d1_atr_threshold": "d1_atr_threshold",
+        "inp_body_ratio_min": "body_ratio_min",
+        "inp_d1_use_retest": "use_retest",
+        "inp_d1_use_volume": "use_volume",
+        "inp_d1_min_volume": "min_volume",
+        "inp_sweep_n": "sweep_n",
+        "inp_sweep_wick_min": "sweep_wick_min",
+        "inp_reclaim_body_min": "reclaim_body_min",
+        "inp_equal_hl_window": "equal_hl_window",
+        "inp_equal_hl_tol": "equal_hl_tol",
+        "inp_d2_anticipar": "d2_anticipar",
+        "inp_fvg_min_size_atr": "fvg_min_size_atr",
+        "inp_fvg_body_ratio": "fvg_body_ratio",
+        "inp_fvg_mitig_umbral": "fvg_mitig_umbral",
+        "inp_ob_lookback": "ob_lookback",
+        "inp_ob_body_min": "ob_body_min",
+        "inp_ob_impulse_min": "ob_impulse_min",
+        "inp_mss_lookback_h4": "mss_lookback_h4",
+        "inp_mss_max_age_h4_bars": "mss_max_age_h4_bars",
+        "inp_pivot_depth": "pivot_depth",
+        "inp_pivot_lookback": "pivot_lookback",
+        "inp_sweep_distancia": "sweep_distancia",
+        "inp_zona_margen": "zona_margen",
+        "inp_peso_estructural": "peso_estructural",
+    }
+    for inp_attr, cfg_attr in mapping.items():
+        value = getattr(config, cfg_attr, None)
+        if value is not None:
+            setattr(core_ctx, inp_attr, value)
 
 
 def calcular_indicadores_core(df: pd.DataFrame) -> Dict[str, List[float]]:
@@ -184,27 +230,36 @@ def calcular_indicadores_core(df: pd.DataFrame) -> Dict[str, List[float]]:
 
 
 def actualizar_contexto_con_indicadores(ctx, timeframe: str = "M15"):
-    """Actualiza buffers de indicadores leyendo columnas precalculadas del DataFrame."""
+    """Actualiza buffers de indicadores reemplazando las listas completas (tamaño fijo).
+
+    El core espera buffers donde el índice 0 es el valor más reciente.
+    append()/extend() acumularían valores históricos y corromperían ATR/EMA/RSI.
+    """
     df = getattr(ctx, f"df_{timeframe.lower()}", None)
-    if df is None or df.empty:
+    # En el runtime los DataFrames pueden ser listas; solo operar sobre DataFrames reales
+    if df is None or not hasattr(df, "columns") or len(df) == 0:
         return
-    
-    # Si el DataFrame tiene indicadores precalculados, usarlos directamente
-    if 'atr8' in df.columns:
-        ctx.g_atr8_buffer.append(float(df['atr8'].iloc[-1]))
-        ctx.g_atr14_buffer.append(float(df['atr14'].iloc[-1]))
-        ctx.g_atr30_buffer.append(float(df['atr30'].iloc[-1]))
-        ctx.g_ema21_buffer.append(float(df['ema21'].iloc[-1]))
-        ctx.g_ema50_buffer.append(float(df['ema50'].iloc[-1]))
-        ctx.g_rsi14_buffer.append(float(df['rsi14'].iloc[-1]))
+
+    def to_buffer(series, max_size: int = 55) -> List[float]:
+        vals = series.to_numpy(dtype=float)[::-1][:max_size]
+        return np.nan_to_num(vals, nan=0.0).tolist()
+
+    precalc_cols = ["atr8", "atr14", "atr30", "ema21", "ema50", "rsi14"]
+    if all(c in df.columns for c in precalc_cols):
+        # DataFrame con indicadores precalculados (CSVFeed / BacktestEngine)
+        ctx.g_atr8_buffer = to_buffer(df['atr8'])
+        ctx.g_atr14_buffer = to_buffer(df['atr14'])
+        ctx.g_atr30_buffer = to_buffer(df['atr30'])
+        ctx.g_ema21_buffer = to_buffer(df['ema21'])
+        ctx.g_ema50_buffer = to_buffer(df['ema50'])
+        ctx.g_rsi14_buffer = to_buffer(df['rsi14'])
     else:
-        # Fallback: recalcular (solo primera carga o CSV antiguo)
-        # Nota: calcular_indicadores_core solo recibe df, no ctx
+        # Fallback: recalcular (CSV antiguo sin columnas de indicadores)
         indicadores = calcular_indicadores_core(df)
-        if indicadores:
-            ctx.g_atr8_buffer.extend(indicadores.get('g_atr8_buffer', []))
-            ctx.g_atr14_buffer.extend(indicadores.get('g_atr14_buffer', []))
-            ctx.g_atr30_buffer.extend(indicadores.get('g_atr30_buffer', []))
-            ctx.g_ema21_buffer.extend(indicadores.get('g_ema21_buffer', []))
-            ctx.g_ema50_buffer.extend(indicadores.get('g_ema50_buffer', []))
-            ctx.g_rsi14_buffer.extend(indicadores.get('g_rsi14_buffer', []))
+        for attr in (
+            "g_atr8_buffer", "g_atr14_buffer", "g_atr30_buffer",
+            "g_ema21_buffer", "g_ema50_buffer", "g_rsi14_buffer",
+        ):
+            buf = indicadores.get(attr, [])
+            if buf:
+                setattr(ctx, attr, buf[:55])

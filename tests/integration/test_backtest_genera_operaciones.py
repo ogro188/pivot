@@ -47,5 +47,5 @@ def test_backtest_genera_al_menos_una_operacion_en_6_meses_reales():
     )
     
     print(f"\n✅ Test pasado: {resultado.total_operaciones} operaciones generadas")
-    print(f"   WinRate: {resultado.win_rate:.2f}%")
+    print(f"   WinRate: {resultado.winrate:.2f}%")
     print(f"   Profit Factor: {resultado.profit_factor:.2f}")

@@ -37,6 +37,10 @@ class Contexto:
     mss_cache: Optional[object] = None     # MSSCache
     zona_cache: Optional[object] = None    # ZonaCache
 
+    # Caché de columnas numpy por DataFrame (clave id(df), no df.attrs:
+    # mutar attrs degrada el rendimiento de df.iloc en pandas 3.x)
+    _pivot_cols_cache: dict = field(default_factory=dict, repr=False, compare=False)
+
     # Métricas G (ya calculadas una vez por vela)
     g1: float = 0.0
     g2: float = 0.0
@@ -91,23 +95,30 @@ class Contexto:
     # Helpers de series temporales (copia idéntica del motor original)
     # -----------------------------------------------------------------
     def _col_cache(self, df: Optional[pd.DataFrame]) -> Optional[Dict[str, object]]:
-        """Caché de columnas numpy por DataFrame (evita lookups pandas por fila)."""
+        """Caché de columnas numpy por DataFrame (evita lookups pandas por fila).
+
+        Almacenado en el contexto (no en df.attrs): en pandas 3.x, mutar
+        df.attrs degrada el rendimiento de df.iloc sobre el mismo objeto.
+        """
         if df is None:
             return None
-        attrs = getattr(df, "attrs", None)
-        if attrs is None:
-            return None
-        if "_pivot_cols" not in attrs:
-            cols: Dict[str, object] = {}
+        cache = self._pivot_cols_cache
+        key = id(df)
+        cols = cache.get(key)
+        if cols is None:
+            cols = {}
             for col in ("open", "high", "low", "close"):
                 if col in df.columns:
                     cols[col] = df[col].to_numpy(dtype=float)
             vol_col = "tick_volume" if "tick_volume" in df.columns else ("volume" if "volume" in df.columns else None)
             if vol_col is not None:
                 cols["volume"] = df[vol_col].to_numpy(dtype=float)
-            cols["index"] = np.asarray(df.index)
-            attrs["_pivot_cols"] = cols
-        return attrs["_pivot_cols"]
+            # Guardar el índice directamente: convertir DatetimeIndex a numpy
+            # (np.asarray(df.index)) es ~2ms por DataFrame en cada barra del
+            # backtest. La lectura escalar por índice negativo es igual de rápida.
+            cols["index"] = df.index
+            cache[key] = cols
+        return cols
 
     def _i_high(self, df: pd.DataFrame, shift: int) -> float:
         if df is None or shift < 0 or shift >= len(df):

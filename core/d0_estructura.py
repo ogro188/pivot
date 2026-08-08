@@ -33,52 +33,38 @@ class EstructuraProvider:
         df = self.ctx.df_h1
         if df is None or len(df) < 50:
             return
+        cache = self.ctx._col_cache(df)
+        if cache is None:
+            return
+        high = cache["high"]
+        low = cache["low"]
+        n = len(high)
         depth = self.ctx.inp_pivot_depth
         lookback = self.ctx.inp_pivot_lookback
         start = depth + 1
-        end = min(lookback - depth, len(df) - depth - 1)
+        end = min(lookback - depth, n - depth - 1)
         highs = []
         lows = []
 
         for i in range(start, end):
-            high_i = self.ctx._i_high(df, i)
+            high_i = high[n - (i + 1)]
             if high_i == 0:
                 continue
             is_swing = True
             for j in range(1, depth + 1):
-                idx_left = -(i - j + 1)
-                idx_right = -(i + j + 1)
-                if idx_left == 0 or idx_right == 0:
-                    is_swing = False
-                    break
-                if abs(idx_left) > len(df) or abs(idx_right) > len(df):
-                    is_swing = False
-                    break
-                left = self.ctx._i_high(df, i - j)
-                right = self.ctx._i_high(df, i + j)
-                if left >= high_i or right >= high_i:
+                if high[n - (i - j + 1)] >= high_i or high[n - (i + j + 1)] >= high_i:
                     is_swing = False
                     break
             if is_swing:
                 highs.append(high_i)
 
         for i in range(start, end):
-            low_i = self.ctx._i_low(df, i)
+            low_i = low[n - (i + 1)]
             if low_i == 0:
                 continue
             is_swing = True
             for j in range(1, depth + 1):
-                idx_left = -(i - j + 1)
-                idx_right = -(i + j + 1)
-                if idx_left == 0 or idx_right == 0:
-                    is_swing = False
-                    break
-                if abs(idx_left) > len(df) or abs(idx_right) > len(df):
-                    is_swing = False
-                    break
-                left = self.ctx._i_low(df, i - j)
-                right = self.ctx._i_low(df, i + j)
-                if left <= low_i or right <= low_i:
+                if low[n - (i - j + 1)] <= low_i or low[n - (i + j + 1)] <= low_i:
                     is_swing = False
                     break
             if is_swing:

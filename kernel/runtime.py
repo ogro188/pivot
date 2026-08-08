@@ -123,14 +123,15 @@ class AssetRuntime:
         # Actualizar contexto con nueva vela
         self._update_contexto(candle, timeframe)
         
-        # Verificar si hay señal
+        # Verificar si hay señales (una por detector que haya disparado)
         try:
-            señal = self.estrategia.generar_señal(self.contexto)
+            señales = self.estrategia.detectar(self.contexto)
             
-            if señal and señal.confianza >= self.estrategia.parametros.get('confianza_minima', 65):
+            for señal in señales:
                 logger.info(
-                    f"🎯 SEÑAL {self.simbolo} - {señal.tipo.name} "
-                    f"(confianza: {señal.confianza:.1f}%)"
+                    f"🎯 SEÑAL {self.simbolo} - "
+                    f"{'LONG' if señal.direccion == 1 else 'SHORT'} "
+                    f"(confianza: {señal.confianza[1]:.1f}%)"
                 )
                 
                 # Ejecutar operación
@@ -174,7 +175,7 @@ class AssetRuntime:
         
         # Calcular tamaño de posición
         riesgo_usd = self.contexto.capital * (self.config.riesgo_por_operacion / 100)
-        sl_distance = abs(señal.stop_loss - señal.precio_entrada)
+        sl_distance = abs(señal.stop_loss - señal.precio)
         
         if sl_distance == 0:
             logger.warning("Stop Loss inválido, skipping operación")
@@ -184,15 +185,14 @@ class AssetRuntime:
         lotes = riesgo_usd / (sl_distance * 100000)  # 1 lote = 100k unidades
         
         operacion = Operacion(
+            id_operacion=None,
+            señal=señal,
             simbolo=self.simbolo,
-            timeframe=self.contexto.timeframe,
-            tipo=señal.tipo,
-            precio_entrada=señal.precio_entrada,
+            direccion=señal.direccion,
+            precio_entrada=señal.precio,
+            timestamp_entrada=self.contexto.timestamp_actual,
             stop_loss=señal.stop_loss,
             take_profit=señal.take_profit,
-            cantidad=lotes,
-            timestamp_abertura=self.contexto.timestamp_actual,
-            razon_entrada=señal.narrativa or "Señal estrategia"
         )
         
         # Guardar en DB (síncrono, funciona desde cualquier hilo)
@@ -208,14 +208,14 @@ class AssetRuntime:
                 """, (
                     self.estrategia.nombre,
                     operacion.simbolo,
-                    operacion.timeframe.name if hasattr(operacion.timeframe, 'name') else str(operacion.timeframe),
-                    operacion.timestamp_abertura,
-                    str(operacion.tipo.value) if hasattr(operacion.tipo, 'value') else str(operacion.tipo),
+                    operacion.timestamp_entrada.strftime('%Y-%m-%d %H:%M:%S'),
+                    operacion.timestamp_entrada.strftime('%Y-%m-%d %H:%M:%S'),
+                    'LONG' if operacion.direccion == 1 else 'SHORT',
                     operacion.precio_entrada,
-                    operacion.cantidad,
+                    lotes,
                     operacion.stop_loss,
                     operacion.take_profit,
-                    operacion.estado
+                    'ABIERTA'
                 ))
                 conn.commit()
         except Exception as e:
@@ -225,8 +225,9 @@ class AssetRuntime:
         self._operaciones_abiertas[id(operacion)] = operacion
         
         logger.info(
-            f"📊 OPERACIÓN {self.simbolo}: {señal.tipo.name} @ {señal.precio_entrada:.5f} | "
-            f"SL: {señal.stop_loss:.5f} | TP: {señal.take_profit:.5f} | "
+            f"📊 OPERACIÓN {self.simbolo}: "
+            f"{'LONG' if operacion.direccion == 1 else 'SHORT'} @ {operacion.precio_entrada:.5f} | "
+            f"SL: {operacion.stop_loss:.5f} | TP: {operacion.take_profit:.5f} | "
             f"Lotes: {lotes:.2f}"
         )
         
@@ -241,25 +242,27 @@ class AssetRuntime:
             razon_cierre = None
             
             # Verificar TP
-            tipo_str = str(op.tipo.value) if hasattr(op.tipo, 'value') else str(op.tipo)
-            if tipo_str.upper() == 'LONG' and candle.close >= op.take_profit:
+            if op.direccion == 1 and candle.close >= op.take_profit:
                 razon_cierre = "Take Profit"
-            elif tipo_str.upper() == 'SHORT' and candle.close <= op.take_profit:
+            elif op.direccion == -1 and candle.close <= op.take_profit:
                 razon_cierre = "Take Profit"
             
             # Verificar SL
-            elif tipo_str.upper() == 'LONG' and candle.close <= op.stop_loss:
+            elif op.direccion == 1 and candle.close <= op.stop_loss:
                 razon_cierre = "Stop Loss"
-            elif tipo_str.upper() == 'SHORT' and candle.close >= op.stop_loss:
+            elif op.direccion == -1 and candle.close >= op.stop_loss:
                 razon_cierre = "Stop Loss"
             
             # Cerrar si corresponde
             if razon_cierre:
-                op.cerrar(
-                    precio_salida=candle.close,
-                    timestamp_cierre=candle.timestamp,
-                    razon=razon_cierre
-                )
+                op.precio_salida = candle.close
+                op.timestamp_salida = candle.timestamp
+                op.razon_salida = razon_cierre
+                if op.direccion == 1:
+                    op.pnl_dinero = (op.precio_salida - op.precio_entrada) * 100000
+                else:
+                    op.pnl_dinero = (op.precio_entrada - op.precio_salida) * 100000
+                op.pnl_puntos = op.pnl_dinero
                 cerrar.append(op_id)
         
         # Remover operaciones cerradas
@@ -278,11 +281,11 @@ class AssetRuntime:
                         WHERE id = ?
                     """, (
                         op.precio_salida,
-                        op.timestamp_cierre,
+                        op.timestamp_salida,
                         op.razon_cierre,
-                        op.estado,
-                        op.pnl,
-                        op.pnl_porcentaje,
+                        'CERRADA',
+                        op.pnl_dinero,
+                        op.pnl_puntos,
                         id(op)
                     ))
                     conn.commit()
