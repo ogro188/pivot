@@ -139,7 +139,7 @@ class Database:
     async def guardar_operacion(self, operacion, estrategia: str):
         self.initialize()
         query = """INSERT INTO operaciones (estrategia, simbolo, timeframe, timestamp_abertura, tipo, precio_entrada, cantidad, stop_loss, take_profit, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-        params = (estrategia, operacion.simbolo, operacion.timeframe.name, operacion.timestamp_abertura, operacion.tipo.value if hasattr(operacion.tipo, 'value') else str(operacion.tipo), operacion.precio_entrada, operacion.cantidad, operacion.stop_loss, operacion.take_profit, operacion.estado)
+        params = (estrategia, operacion.simbolo, str(operacion.timeframe), operacion.timestamp_abertura, str(operacion.tipo), operacion.precio_entrada, operacion.cantidad, operacion.stop_loss, operacion.take_profit, operacion.estado)
         await self.execute_async(query, params)
     
     async def actualizar_operacion_cierre(self, operacion_id: int, operacion):

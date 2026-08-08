@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: pivot-ws
-    command: python kernel/feeds/deriv.py
+    command: python scripts/run_deriv_ws.py
     ports:
       - "8765:8765"
     volumes:
