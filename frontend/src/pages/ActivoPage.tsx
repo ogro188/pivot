@@ -142,12 +142,12 @@ export default function ActivoPage() {
 
       {/* Charts */}
       {!multiTf ? (
-        <ChartHost candles={candles} signals={currentSignals} height={400} asset={asset} />
+        <ChartHost candles={candles} signals={currentSignals} height={400} asset={asset} id={`${simbolo}:${tf}`} />
       ) : (
         <div className="space-y-4">
-          <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} />
-          <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} />
-          <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} />
+          <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} id={`${simbolo}:M15`} />
+          <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} id={`${simbolo}:H1`} />
+          <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} id={`${simbolo}:H4`} />
         </div>
       )}
 
