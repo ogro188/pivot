@@ -5,6 +5,7 @@ Ejecuta estrategias sobre datos históricos y calcula métricas de rendimiento.
 """
 import pandas as pd
 import numpy as np
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from copy import deepcopy
 from kernel.contrato import Contexto, Señal, ActivoInfo, Estrategia, Overlay, Metrica
 from typing import Any
 from kernel.feeds.csv import CSVFeed, MultiTimeframeFeed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -161,46 +164,314 @@ class BacktestEngine:
         # Contexto compartido
         self.contexto: Optional[Contexto] = None
     
-    def _crear_contexto(self, feeds: Dict[str, CSVFeed]) -> Contexto:
-        """Crea un contexto desde los feeds actuales, generando timeframes faltantes por resampling."""
-        from kernel.feeds.csv_resample import resamplear_ohlc
-        
+    def _resolve_broker_tz(self) -> timezone:
+        """Resuelve la timezone del broker (UTC+2 por defecto, como el motor live)."""
+        tz = getattr(self.activo, "timezone", timezone.utc)
+        if tz is timezone.utc:
+            return timezone(timedelta(hours=2))
+        return tz
+
+    def _to_broker_time(self, bar_time: datetime) -> datetime:
+        if bar_time is None or bar_time.year < 2000:
+            return bar_time
+        if bar_time.tzinfo is None:
+            bar_time = bar_time.replace(tzinfo=timezone.utc)
+        return bar_time.astimezone(self._broker_tz)
+
+    def _get_session(self, bar_time: datetime) -> str:
+        if bar_time is None or bar_time.year < 2000:
+            return "OUT"
+        bt = self._to_broker_time(bar_time)
+        hour = bt.hour
+        if 0 <= hour < 7:
+            return "ASIA"
+        if 7 <= hour < 13:
+            return "LONDON"
+        if 13 <= hour < 15:
+            return "NY_OPEN"
+        if 15 <= hour < 16:
+            return "LONDON_CLOSE"
+        if 16 <= hour < 21:
+            return "NY"
+        return "OUT"
+
+    def _get_kill_zone(self, bar_time: datetime) -> str:
+        if bar_time is None or bar_time.year < 2000:
+            return "NONE"
+        bt = self._to_broker_time(bar_time)
+        hour = bt.hour
+        minute = bt.minute
+        if hour == 7 or hour == 8:
+            return "LONDON_OPEN_KILL"
+        if hour == 13 or (hour == 14 and minute <= 30):
+            return "NY_OPEN_KILL"
+        if 13 <= hour < 15:
+            return "LONDON_NY_OVERLAP"
+        return "NONE"
+
+    @staticmethod
+    def _get_trend_d1(g_ema50_d1_buffer, g_ema200_d1_buffer) -> str:
+        if len(g_ema50_d1_buffer) < 2 or len(g_ema200_d1_buffer) < 2:
+            return "NEUTRO"
+        ema50 = g_ema50_d1_buffer[1]
+        ema200 = g_ema200_d1_buffer[1]
+        if ema50 == 0 or ema200 == 0:
+            return "NEUTRO"
+        eps = ema200 * 0.0005
+        if ema50 > ema200 + eps:
+            return "ALCISTA"
+        if ema50 < ema200 - eps:
+            return "BAJISTA"
+        return "NEUTRO"
+
+    @staticmethod
+    def _get_regimen_vol(g_atr8_buffer, g_atr14_buffer, g_atr30_buffer) -> str:
+        atr8 = g_atr8_buffer[0] if g_atr8_buffer else 0.0
+        atr14 = g_atr14_buffer[0] if g_atr14_buffer else 0.0
+        atr30 = g_atr30_buffer[0] if g_atr30_buffer else 0.0
+        if atr14 == 0 or atr30 == 0:
+            return "NORMAL"
+        ratio_corto = atr8 / atr14
+        ratio_largo = atr14 / atr30
+        if ratio_largo < 0.6 and ratio_corto < 0.8:
+            return "COMPRESION"
+        elif ratio_largo > 1.5:
+            return "EXTREMO"
+        elif ratio_corto > 1.3:
+            return "EXPANSION"
+        return "NORMAL"
+
+    def _crear_contexto(self, feeds: Dict[str, CSVFeed], bar: Optional[Dict[str, Any]] = None, pos: Optional[int] = None) -> Contexto:
+        """
+        Crea un contexto desde los feeds actuales SIN look-ahead.
+        - M15 se recorta a la barra actual (ventana acotada).
+        - H1/H4/D1 se derivan por resampling y se recortan al momento actual.
+        - Los buffers de indicadores se pueblan desde columnas precalculadas (causales).
+        - Se inyectan helpers reales de volumen, MSS H4 y zona premium/discount.
+        """
+        ref_timeframe = min(feeds.keys(), key=lambda tf: CSVFeed.TIMEFRAME_MAP.get(tf, 999999))
+        ref_feed = feeds[ref_timeframe]
+        df_full = ref_feed.df
+
+        if pos is None:
+            pos = ref_feed.idx
+        if pos <= 0:
+            pos = min(1, len(df_full))
+
+        if bar is not None:
+            current_time = bar["timestamp"]
+        elif pos > 0 and pos <= len(df_full):
+            current_time = df_full.index[pos - 1].to_pydatetime()
+        else:
+            current_time = datetime.now(timezone.utc)
+
+        # M15 hasta la barra actual (incluyéndola), sin datos futuros
+        n_m15 = df_full.index.searchsorted(pd.Timestamp(current_time), side="right")
+        df_m15 = df_full.iloc[max(0, n_m15 - 500):n_m15]
+
+        # Cache de columnas de indicadores (arrays numpy) para buffers baratos por barra
+        if getattr(self, "_col_arrays", None) is None:
+            cols = ["atr8", "atr14", "atr30", "ema21", "ema50", "rsi14"]
+            self._col_arrays = {
+                c: df_full[c].to_numpy(dtype=float) for c in cols if c in df_full.columns
+            }
+        col_arrays = self._col_arrays
+
+        def _slice_tf(tf: str) -> Optional[pd.DataFrame]:
+            full = self._precalc.get(tf)
+            if full is None or full.empty:
+                return None
+            n = full.index.searchsorted(pd.Timestamp(current_time), side="right")
+            if n <= 0:
+                return None
+            return full.iloc[max(0, n - 500):n]
+
+        df_h1 = _slice_tf("H1")
+        df_h4 = _slice_tf("H4")
+        df_d1 = _slice_tf("D1")
+
+        # Buffers de indicadores desde columnas precalculadas (causales, índice 0 = más reciente)
+        BUF = 55
+
+        def _buf(col: str) -> List[float]:
+            arr = col_arrays.get(col)
+            if arr is None or len(arr) == 0:
+                return []
+            end = min(n_m15, len(arr))
+            start = max(0, end - BUF)
+            seg = arr[start:end]
+            return [float(x) if not np.isnan(x) else 0.0 for x in seg[::-1]]
+
+        g_atr8_buffer = _buf("atr8")
+        g_atr14_buffer = _buf("atr14")
+        g_atr30_buffer = _buf("atr30")
+        g_ema21_buffer = _buf("ema21")
+        g_ema50_buffer = _buf("ema50")
+        g_rsi14_buffer = _buf("rsi14")
+
+        # Buffers de EMAs D1/H4 para tendencia
+        if getattr(self, "_ema_arrays", None) is None:
+            self._ema_arrays = {
+                tf: {k: v.to_numpy(dtype=float) for k, v in emas.items()}
+                for tf, emas in getattr(self, "_precalc_emas", {}).items()
+            }
+        ema_arrays = self._ema_arrays
+
+        g_ema50_d1_buffer: List[float] = []
+        g_ema200_d1_buffer: List[float] = []
+        g_ema20_h4_buffer: List[float] = []
+        g_ema50_h4_buffer: List[float] = []
+
+        if df_d1 is not None:
+            d1_emas = ema_arrays.get("D1") or {}
+            n_d1 = self._precalc["D1"].index.searchsorted(pd.Timestamp(current_time), side="right")
+            for key, buf in (("ema50", g_ema50_d1_buffer), ("ema200", g_ema200_d1_buffer)):
+                arr = d1_emas.get(key)
+                if arr is not None and n_d1 > 0:
+                    seg = arr[max(0, n_d1 - 5):n_d1]
+                    buf.extend([float(x) if not np.isnan(x) else 0.0 for x in seg[::-1]])
+
+        if df_h4 is not None:
+            h4_emas = ema_arrays.get("H4") or {}
+            n_h4 = self._precalc["H4"].index.searchsorted(pd.Timestamp(current_time), side="right")
+            for key, buf in (("ema20", g_ema20_h4_buffer), ("ema50", g_ema50_h4_buffer)):
+                arr = h4_emas.get(key)
+                if arr is not None and n_h4 > 0:
+                    seg = arr[max(0, n_h4 - 5):n_h4]
+                    buf.extend([float(x) if not np.isnan(x) else 0.0 for x in seg[::-1]])
+
         ctx = Contexto(
             activo=self.activo,
-            precio=0.0,
-            tiempo=datetime.now(timezone.utc),
+            df_m15=df_m15,
+            df_h1=df_h1,
+            df_h4=df_h4,
+            df_d1=df_d1,
+            precio=float(df_m15["close"].iloc[-1]) if len(df_m15) else 0.0,
+            tiempo=current_time,
+            g_atr8_buffer=g_atr8_buffer,
+            g_atr14_buffer=g_atr14_buffer,
+            g_atr30_buffer=g_atr30_buffer,
+            g_ema21_buffer=g_ema21_buffer,
+            g_ema50_buffer=g_ema50_buffer,
+            g_rsi14_buffer=g_rsi14_buffer,
+            g_ema50_d1_buffer=g_ema50_d1_buffer,
+            g_ema200_d1_buffer=g_ema200_d1_buffer,
+            g_ema20_h4_buffer=g_ema20_h4_buffer,
+            g_ema50_h4_buffer=g_ema50_h4_buffer,
+            session=self._get_session(current_time),
+            kill_zone=self._get_kill_zone(current_time),
+            trend_d1=self._get_trend_d1(g_ema50_d1_buffer, g_ema200_d1_buffer),
+            regimen_vol=self._get_regimen_vol(g_atr8_buffer, g_atr14_buffer, g_atr30_buffer),
             point=self.activo.punto,
-            broker_tz_offset=self.activo.timezone,
+            broker_tz_offset=self._broker_tz,
         )
-        
-        # Obtener el feed de mayor resolución (base para resampling)
-        tf_base = min(feeds.keys(), key=lambda tf: {"M1":1, "M3":3, "M5":5, "M15":15, "M30":30, "H1":60, "H4":240, "D1":1440}.get(tf, 9999))
-        df_base = feeds[tf_base].df  # Usar todo el historial disponible
-        
-        # Asignar DataFrames explícitos y generar los faltantes
-        timeframes_requeridos = getattr(self.estrategia, "timeframes", ["M15", "H1", "H4", "D1"])
-        
-        for tf in timeframes_requeridos:
-            df_attr = f"df_{tf.lower()}"
-            if not hasattr(ctx, df_attr):
-                continue
-                
-            if tf in feeds:
-                # Feed explícito disponible - obtener barras hasta posición actual del feed
-                setattr(ctx, df_attr, feeds[tf].get_bars(n=500) if feeds[tf].idx > 0 else feeds[tf].df.tail(500))
-            elif tf in ["H1", "H4", "D1"]:
-                # Generar por resampling desde el base o usar precálculo
-                try:
-                    if hasattr(self, '_precalc') and tf in self._precalc:
-                        df_resampled = self._precalc[tf].tail(500)
-                    else:
-                        df_resampled = resamplear_ohlc(df_base, tf).tail(500)
-                    setattr(ctx, df_attr, df_resampled)
-                except Exception as e:
-                    # Si falla el resampling, dejar None pero loguear
-                    pass
-        
+
+        # Inyectar helpers reales (sobre datos recortados a la barra actual)
+        ctx.get_volume_ratio = self._make_get_volume_ratio(df_m15)
+        ctx.get_volume_ratio_cached = self._make_get_volume_ratio(df_m15)
+        ctx.detect_mss_h4 = self._make_detect_mss_h4(df_h4)
+        ctx.es_zona_premium_discount = self._make_es_zona_premium_discount(df_m15)
+        ctx.evaluar_contexto_estructural = self._make_evaluar_contexto_estructural()
+
         return ctx
+
+    @staticmethod
+    def _make_get_volume_ratio(df: pd.DataFrame):
+        """Crea la función get_volume_ratio sobre un df recortado a la barra actual."""
+        def _ivol(dfx: pd.DataFrame, shift: int) -> int:
+            if dfx is None or shift < 0 or shift >= len(dfx):
+                return 0
+            row = dfx.iloc[-(shift + 1)]
+            col = "tick_volume" if "tick_volume" in dfx.columns else "volume"
+            try:
+                return int(row[col])
+            except Exception:
+                return 0
+
+        def get_volume_ratio(bar_shift: int, n_lookback: int) -> float:
+            if df is None or len(df) == 0:
+                return 1.0
+            vol_signal = _ivol(df, bar_shift)
+            if vol_signal <= 0:
+                return 1.0
+            total = 0
+            count = 0
+            for i in range(1, n_lookback + 1):
+                v = _ivol(df, bar_shift + i)
+                if v > 0:
+                    total += v
+                    count += 1
+            if count == 0 or total <= 0:
+                return 1.0
+            return vol_signal / (total / count)
+
+        return get_volume_ratio
+
+    @staticmethod
+    def _make_detect_mss_h4(df_h4: Optional[pd.DataFrame]):
+        """Crea la función detect_mss_h4 sobre el H4 recortado a la barra actual."""
+        def detect_mss_h4() -> Tuple[bool, int, str, float]:
+            if df_h4 is None or len(df_h4) < 50:
+                return (False, 0, "", 0.0)
+            max_scan = min(12, len(df_h4) - 3)
+            for i in range(1, max_scan + 1):
+                close_i = float(df_h4.iloc[-(i + 1)]["close"])
+                if close_i == 0:
+                    continue
+                prior_high = 0.0
+                prior_low = 999999.0
+                window_start = i + 1
+                window_end = min(i + 1 + 20, len(df_h4))
+                for k in range(window_start, window_end):
+                    hk = float(df_h4.iloc[-(k + 1)]["high"])
+                    lk = float(df_h4.iloc[-(k + 1)]["low"])
+                    if hk == 0 or lk == 0:
+                        continue
+                    if hk > prior_high:
+                        prior_high = hk
+                    if lk < prior_low:
+                        prior_low = lk
+                if prior_high == 0 or prior_low >= 999999.0:
+                    continue
+                if close_i > prior_high:
+                    return (True, i, "ALCISTA", prior_high)
+                if close_i < prior_low:
+                    return (True, i, "BAJISTA", prior_low)
+            return (False, 0, "", 0.0)
+
+        return detect_mss_h4
+
+    @staticmethod
+    def _make_es_zona_premium_discount(df: pd.DataFrame):
+        """Crea la función es_zona_premium_discount sobre el M15 recortado."""
+        def es_zona_premium_discount(nivel: float) -> Tuple[bool, str]:
+            if df is None or len(df) == 0:
+                return (False, "NEUTRO")
+            max_high = 0.0
+            min_low = 999999.0
+            for i in range(1, min(51, len(df))):
+                h = float(df.iloc[-(i + 1)]["high"])
+                l = float(df.iloc[-(i + 1)]["low"])
+                if h == 0 or l == 0:
+                    break
+                if h > max_high:
+                    max_high = h
+                if l < min_low:
+                    min_low = l
+            if max_high > 0 and min_low < 999999.0 and max_high > min_low:
+                mid = (max_high + min_low) / 2.0
+                return (True, "PREMIUM" if nivel > mid else "DISCOUNT")
+            return (False, "NEUTRO")
+
+        return es_zona_premium_discount
+
+    @staticmethod
+    def _make_evaluar_contexto_estructural():
+        """Stub conservador; los detectores no lo usan en el path de backtest."""
+        def evaluar_contexto_estructural(direction: int, nivel: float, detector: str, trend_d1: str) -> Tuple[float, float]:
+            return (50.0, 0.0)
+
+        return evaluar_contexto_estructural
     
     def _aplicar_slippage(self, precio: float, direccion: int) -> float:
         """Aplica slippage al precio de entrada."""
@@ -469,6 +740,8 @@ class BacktestEngine:
         self.operaciones_cerradas = []
         self.equity_curve = []
         self.señales_generadas = []
+        self._col_arrays = None
+        self._ema_arrays = None
         
         # Setup de la estrategia
         self.estrategia.setup(params_estrategia or {}, self.activo)
@@ -477,35 +750,46 @@ class BacktestEngine:
         ref_timeframe = min(feeds.keys(), key=lambda tf: CSVFeed.TIMEFRAME_MAP.get(tf, 999999))
         ref_feed = feeds[ref_timeframe]
         
-        # Precalcular timeframes superiores una sola vez
+        # Precalcular timeframes superiores UNA sola vez desde todo el M15.
+        # NO es look-ahead: cada barra recorta estos DataFrames a su timestamp actual.
         from kernel.feeds.csv_resample import resamplear_ohlc
-        df_base_full = ref_feed.get_bars(n=10000) if ref_feed.idx > 0 else ref_feed.df
-        precalc = {}
+        df_full = ref_feed.df
+        self._precalc: Dict[str, Optional[pd.DataFrame]] = {}
         for tf in ["H1", "H4", "D1"]:
-            if tf != ref_timeframe:
-                try:
-                    precalc[tf] = resamplear_ohlc(df_base_full, tf)
-                except Exception:
-                    pass
+            if tf == ref_timeframe:
+                continue
+            try:
+                self._precalc[tf] = resamplear_ohlc(df_full, tf)
+            except Exception as e:
+                logger.warning(f"No se pudo precalcular {tf}: {e}")
+                self._precalc[tf] = None
         
-        self._precalc = precalc
+        # Precalcular series de EMA para tendencias D1/H4 (también recortadas por barra)
+        self._precalc_emas: Dict[str, Dict[str, pd.Series]] = {}
+        for tf in ["H1", "H4", "D1"]:
+            df_tf = self._precalc.get(tf)
+            if df_tf is None or df_tf.empty:
+                continue
+            close = df_tf["close"]
+            emas: Dict[str, pd.Series] = {}
+            if tf == "D1":
+                emas["ema50"] = close.ewm(span=50, adjust=False).mean()
+                emas["ema200"] = close.ewm(span=200, adjust=False).mean()
+            if tf == "H4":
+                emas["ema20"] = close.ewm(span=20, adjust=False).mean()
+                emas["ema50"] = close.ewm(span=50, adjust=False).mean()
+            self._precalc_emas[tf] = emas
         
-        # Precalcular métricas G una sola vez
-        ctx_base = self._crear_contexto(feeds)
-        try:
-            from kernel.metricas_g import calcular_metricas_g
-            ctx_base.g_metrics = calcular_metricas_g(ctx_base)
-        except Exception:
-            ctx_base.g_metrics = None
+        self._broker_tz = self._resolve_broker_tz()
         
         # Iterar barra a barra
         for bar in ref_feed.iter_barras():
-            # Actualizar contexto reusando el base con g_metrics
-            self.contexto = self._crear_contexto(feeds)
+            pos = ref_feed.idx
+            
+            # Construir contexto con datos solo hasta la barra actual (sin look-ahead)
+            self.contexto = self._crear_contexto(feeds, bar=bar, pos=pos)
             self.contexto.precio = bar["close"]
             self.contexto.tiempo = bar["timestamp"]
-            if ctx_base.g_metrics is not None:
-                self.contexto.g_metrics = ctx_base.g_metrics
             
             # Ejecutar estrategia
             señales = self.estrategia.detectar(self.contexto)

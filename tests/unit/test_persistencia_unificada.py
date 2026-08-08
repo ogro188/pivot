@@ -15,7 +15,7 @@ def test_persistencia_csv_eliminada():
 
 def test_motor_v8_no_importa_persistencia():
     """Verifica que motor_v8.py no importa desde core.persistencia"""
-    motor_path = '/workspace/core/motor_v8.py'
+    motor_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'core', 'motor_v8.py')
     with open(motor_path, 'r', encoding='utf-8') as f:
         content = f.read()
     

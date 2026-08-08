@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Tuple
 import pandas as pd
+import numpy as np
 
 
 @dataclass
@@ -89,34 +90,79 @@ class Contexto:
     # -----------------------------------------------------------------
     # Helpers de series temporales (copia idéntica del motor original)
     # -----------------------------------------------------------------
+    def _col_cache(self, df: Optional[pd.DataFrame]) -> Optional[Dict[str, object]]:
+        """Caché de columnas numpy por DataFrame (evita lookups pandas por fila)."""
+        if df is None:
+            return None
+        attrs = getattr(df, "attrs", None)
+        if attrs is None:
+            return None
+        if "_pivot_cols" not in attrs:
+            cols: Dict[str, object] = {}
+            for col in ("open", "high", "low", "close"):
+                if col in df.columns:
+                    cols[col] = df[col].to_numpy(dtype=float)
+            vol_col = "tick_volume" if "tick_volume" in df.columns else ("volume" if "volume" in df.columns else None)
+            if vol_col is not None:
+                cols["volume"] = df[vol_col].to_numpy(dtype=float)
+            cols["index"] = np.asarray(df.index)
+            attrs["_pivot_cols"] = cols
+        return attrs["_pivot_cols"]
+
     def _i_high(self, df: pd.DataFrame, shift: int) -> float:
         if df is None or shift < 0 or shift >= len(df):
             return 0.0
+        cache = self._col_cache(df)
+        if cache is not None:
+            return float(cache["high"][-(shift + 1)])
         return float(df.iloc[-(shift + 1)]["high"])
 
     def _i_low(self, df: pd.DataFrame, shift: int) -> float:
         if df is None or shift < 0 or shift >= len(df):
             return 0.0
+        cache = self._col_cache(df)
+        if cache is not None:
+            return float(cache["low"][-(shift + 1)])
         return float(df.iloc[-(shift + 1)]["low"])
 
     def _i_close(self, df: pd.DataFrame, shift: int) -> float:
         if df is None or shift < 0 or shift >= len(df):
             return 0.0
+        cache = self._col_cache(df)
+        if cache is not None:
+            return float(cache["close"][-(shift + 1)])
         return float(df.iloc[-(shift + 1)]["close"])
 
     def _i_open(self, df: pd.DataFrame, shift: int) -> float:
         if df is None or shift < 0 or shift >= len(df):
             return 0.0
+        cache = self._col_cache(df)
+        if cache is not None:
+            return float(cache["open"][-(shift + 1)])
         return float(df.iloc[-(shift + 1)]["open"])
 
     def _i_volume(self, df: pd.DataFrame, shift: int) -> int:
         if df is None or shift < 0 or shift >= len(df):
             return 0
-        return int(df.iloc[-(shift + 1)]["tick_volume"])
+        cache = self._col_cache(df)
+        if cache is not None:
+            vol = cache.get("volume")
+            if vol is not None:
+                return int(vol[-(shift + 1)])
+            return 0
+        row = df.iloc[-(shift + 1)]
+        col = "tick_volume" if "tick_volume" in df.columns else "volume"
+        return int(row[col])
 
     def _i_time(self, df: pd.DataFrame, shift: int) -> datetime:
         if df is None or shift < 0 or shift >= len(df):
             return datetime(1970, 1, 1)
+        cache = self._col_cache(df)
+        if cache is not None:
+            t = cache["index"][-(shift + 1)]
+            if isinstance(t, pd.Timestamp):
+                return t.to_pydatetime()
+            return t
         t = df.index[-(shift + 1)]
         if isinstance(t, pd.Timestamp):
             return t.to_pydatetime()

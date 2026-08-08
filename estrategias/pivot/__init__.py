@@ -61,7 +61,7 @@ class ConfiguracionPivot:
     # Filtros de contexto
     usar_kill_zones: bool = True
     usar_trend_d1: bool = True
-    confianza_minima: float = 60.0
+    confianza_minima: float = 50.0
 
 
 class EstrategiaPivot(Estrategia):
@@ -97,7 +97,7 @@ class EstrategiaPivot(Estrategia):
         "d1_atr_threshold": {"tipo": "float", "default": 0.50, "min": 0.1, "max": 2.0},
         "risk_por_operacion": {"tipo": "float", "default": 1.0, "min": 0.1, "max": 5.0},
         "reward_ratio_min": {"tipo": "float", "default": 1.5, "min": 1.0, "max": 5.0},
-        "confianza_minima": {"tipo": "float", "default": 60.0, "min": 40.0, "max": 90.0},
+        "confianza_minima": {"tipo": "float", "default": 50.0, "min": 40.0, "max": 90.0},
         "usar_kill_zones": {"tipo": "bool", "default": True},
         "usar_trend_d1": {"tipo": "bool", "default": True},
     }
@@ -129,7 +129,7 @@ class EstrategiaPivot(Estrategia):
             d1_atr_threshold=params.get("d1_atr_threshold", 0.50),
             risk_por_operacion=params.get("risk_por_operacion", 1.0),
             reward_ratio_min=params.get("reward_ratio_min", 1.5),
-            confianza_minima=params.get("confianza_minima", 60.0),
+            confianza_minima=params.get("confianza_minima", 50.0),
             usar_kill_zones=params.get("usar_kill_zones", True),
             usar_trend_d1=params.get("usar_trend_d1", True),
         )
@@ -200,9 +200,9 @@ class EstrategiaPivot(Estrategia):
         
         # Filtrar detectores con señales válidas
         detectores_activos = [k for k, v in resultados.items() if "senal" in v and v.get("clasificacion") in ["A", "B"]]
-        
-        if len(detectores_activos) < 2:
-            # Se requieren al menos 2 detectores confirmando
+
+        if len(detectores_activos) < 1:
+            # Se requiere al menos 1 detector confirmando; la confianza filtra calidad
             return []
         
         # Determinar dirección mayoritaria

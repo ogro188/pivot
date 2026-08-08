@@ -406,7 +406,9 @@ class PivotRadarEngine:
     def _i_volume(self, df: pd.DataFrame, shift: int) -> int:
         if df is None or shift < 0 or shift >= len(df):
             return 0
-        return int(df.iloc[-(shift + 1)]["tick_volume"])
+        row = df.iloc[-(shift + 1)]
+        col = "tick_volume" if "tick_volume" in df.columns else "volume"
+        return int(row[col])
 
     def _i_time(self, df: pd.DataFrame, shift: int) -> datetime:
         if df is None or shift < 0 or shift >= len(df):

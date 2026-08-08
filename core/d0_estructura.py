@@ -41,7 +41,7 @@ class EstructuraProvider:
         lows = []
 
         for i in range(start, end):
-            high_i = float(df.iloc[-(i + 1)]["high"])
+            high_i = self.ctx._i_high(df, i)
             if high_i == 0:
                 continue
             is_swing = True
@@ -54,17 +54,16 @@ class EstructuraProvider:
                 if abs(idx_left) > len(df) or abs(idx_right) > len(df):
                     is_swing = False
                     break
-                if (
-                    float(df.iloc[idx_left]["high"]) >= high_i
-                    or float(df.iloc[idx_right]["high"]) >= high_i
-                ):
+                left = self.ctx._i_high(df, i - j)
+                right = self.ctx._i_high(df, i + j)
+                if left >= high_i or right >= high_i:
                     is_swing = False
                     break
             if is_swing:
                 highs.append(high_i)
 
         for i in range(start, end):
-            low_i = float(df.iloc[-(i + 1)]["low"])
+            low_i = self.ctx._i_low(df, i)
             if low_i == 0:
                 continue
             is_swing = True
@@ -77,10 +76,9 @@ class EstructuraProvider:
                 if abs(idx_left) > len(df) or abs(idx_right) > len(df):
                     is_swing = False
                     break
-                if (
-                    float(df.iloc[idx_left]["low"]) <= low_i
-                    or float(df.iloc[idx_right]["low"]) <= low_i
-                ):
+                left = self.ctx._i_low(df, i - j)
+                right = self.ctx._i_low(df, i + j)
+                if left <= low_i or right <= low_i:
                     is_swing = False
                     break
             if is_swing:

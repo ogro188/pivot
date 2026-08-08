@@ -171,7 +171,23 @@ class Database:
         self.initialize()
         metrics = resultado.to_dict() if hasattr(resultado, 'to_dict') else {}
         query = """INSERT INTO backtests (estrategia, simbolo, timeframe, fecha_inicio, fecha_fin, capital_inicial, capital_final, retorno_total, win_rate, total_operaciones, profit_factor, sharpe_ratio, drawdown_max, parametros, metricas_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-        params = (resultado.estrategia, resultado.simbolo, resultado.timeframe.name if hasattr(resultado.timeframe, 'name') else str(resultado.timeframe), resultado.fecha_inicio, resultado.fecha_fin, resultado.capital_inicial, resultado.capital_final, resultado.retorno_total, resultado.win_rate, resultado.total_operaciones, metrics.get('profit_factor'), metrics.get('sharpe_ratio'), metrics.get('drawdown_max'), json.dumps(parametros or {}), json.dumps(metrics))
+        params = (
+            resultado.estrategia,
+            resultado.simbolo,
+            getattr(resultado, "timeframe_principal", None),
+            getattr(resultado, "periodo_inicio", None),
+            getattr(resultado, "periodo_fin", None),
+            resultado.capital_inicial,
+            resultado.capital_final,
+            resultado.retorno_total,
+            getattr(resultado, "winrate", None),
+            resultado.total_operaciones,
+            metrics.get('profit_factor'),
+            metrics.get('sharpe_ratio'),
+            metrics.get('drawdown_maximo'),
+            json.dumps(parametros or {}),
+            json.dumps(metrics, default=str),
+        )
         await self.execute_async(query, params)
     
     async def obtener_backtests(self, estrategia: str = None, limite: int = 50) -> List[Dict]:

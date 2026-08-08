@@ -129,16 +129,18 @@ class CSVFeed:
             raise ValueError(f"Columnas faltantes en CSV: {missing}")
         
         # Convertir timestamp a datetime
-        if df["timestamp"].dtype == "object":
-            # Intentar parsear ISO format o Unix timestamp
-            try:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-            except:
-                # Asumir Unix timestamp en segundos
-                df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit="s", utc=True)
-        elif df["timestamp"].dtype in ["int64", "float64"]:
+        # Nota: en pandas >= 3.0 las columnas de texto usan dtype "str" (StringDtype),
+        # no "object". Se detecta por tipo numérico en lugar del dtype exacto.
+        if pd.api.types.is_numeric_dtype(df["timestamp"]):
             # Unix timestamp
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+        else:
+            # Intentar parsear ISO format
+            try:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            except Exception:
+                # Asumir Unix timestamp en segundos
+                df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit="s", utc=True)
         
         # Convertir a timezone especificada
         df["timestamp"] = df["timestamp"].dt.tz_convert(self.tz)
