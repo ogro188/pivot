@@ -1,8 +1,14 @@
 import { useEffect, useRef } from 'react'
-import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp } from 'lightweight-charts'
-import { CandleDTO } from '../store'
+import { createChart, IChartApi, ISeriesApi, CandlestickData, UTCTimestamp, SeriesMarker } from 'lightweight-charts'
+import { CandleDTO, SignalDTO } from '../store'
 
-export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
+interface ChartHostProps {
+  candles: CandleDTO[]
+  signals?: SignalDTO[]
+  height?: number
+}
+
+export default function ChartHost({ candles, signals = [], height = 400 }: ChartHostProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -13,7 +19,7 @@ export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
       layout: { background: { color: '#111827' }, textColor: '#d1d5db' },
       grid: { vertLines: { color: '#374151' }, horzLines: { color: '#374151' } },
       width: containerRef.current.clientWidth,
-      height: 400,
+      height,
     })
     const series = chart.addCandlestickSeries({
       upColor: '#10b981', downColor: '#ef4444', borderUpColor: '#10b981', borderDownColor: '#ef4444',
@@ -28,7 +34,7 @@ export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
     }
     window.addEventListener('resize', handleResize)
     return () => { window.removeEventListener('resize', handleResize); chart.remove() }
-  }, [])
+  }, [height])
 
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return
@@ -39,6 +45,25 @@ export default function ChartHost({ candles }: { candles: CandleDTO[] }) {
     seriesRef.current.setData(data)
     chartRef.current?.timeScale().fitContent()
   }, [candles])
+
+  // Actualizar markers de señales
+  useEffect(() => {
+    if (!seriesRef.current || signals.length === 0) return
+    const markers: SeriesMarker<UTCTimestamp>[] = signals
+      .filter((s) => s.ts && s.precio)
+      .map((s) => {
+        const timeSec = Math.floor(s.ts / 1000) // lightweight-charts usa segundos
+        const isLong = s.direccion === 1
+        return {
+          time: timeSec as UTCTimestamp,
+          position: isLong ? 'belowBar' : 'aboveBar',
+          color: isLong ? '#10b981' : '#ef4444',
+          shape: 'circle' as const,
+          text: s.etiqueta?.replace('PIVOT_', '') || 'S',
+        }
+      })
+    seriesRef.current.setMarkers(markers)
+  }, [signals])
 
   return <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />
 }

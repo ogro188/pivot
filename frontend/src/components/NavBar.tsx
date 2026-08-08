@@ -11,6 +11,9 @@ const links = [
 export default function NavBar() {
   const loc = useLocation()
   const wsConnected = useStore((s) => s.wsConnected)
+  const soundsEnabled = useStore((s) => s.soundsEnabled)
+  const setSoundsEnabled = useStore((s) => s.setSoundsEnabled)
+
   return (
     <nav className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex gap-4 items-center">
       {links.map((l) => (
@@ -23,6 +26,16 @@ export default function NavBar() {
         </Link>
       ))}
       <div className="ml-auto flex items-center gap-2">
+        <button
+          onClick={() => setSoundsEnabled(!soundsEnabled)}
+          className={`px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors ${
+            soundsEnabled ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+          }`}
+          title={soundsEnabled ? 'Desactivar sonidos' : 'Activar sonidos'}
+        >
+          <span>{soundsEnabled ? '🔔' : '🔕'}</span>
+          <span className="hidden sm:inline">{soundsEnabled ? 'ON' : 'OFF'}</span>
+        </button>
         <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
         <span className="text-xs text-gray-400">{wsConnected ? 'WS' : 'OFF'}</span>
       </div>
