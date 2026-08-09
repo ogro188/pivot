@@ -76,7 +76,7 @@ function App() {
     if (!pushNotificationsEnabled || !isHighConfidence(signal)) return
     if (Notification.permission !== 'granted') return
     try {
-      new Notification(`PIVOT - ${signal.asset} ${signal.direccion === 1 ? 'LONG' : 'SHORT'}`, {
+      new Notification(`PV TERMINAL - ${signal.asset} ${signal.direccion === 1 ? 'LONG' : 'SHORT'}`, {
         body: `Confianza ${signal.confianza?.[0]}% @ ${signal.precio?.toFixed(5)}`,
         icon: '/pivot-icon.png',
         tag: `signal-${signal.id}`,
@@ -147,9 +147,9 @@ function App() {
   }, [setWsConnected, addSignal, addLog, setAssetPrice, soundsEnabled, pushNotificationsEnabled])
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100">
+    <div className="min-h-screen bg-base-bg text-text-primary">
       <NavBar />
-      <main className="p-4">
+      <main className="p-3">
         <Routes>
           <Route path="/" element={<HubPage />} />
           <Route path="/activo/:simbolo" element={<ActivoPage />} />

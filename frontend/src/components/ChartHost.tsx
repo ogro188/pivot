@@ -46,7 +46,7 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
       drawing={{ storageKey }}
       indicators={indicators}
       style={{ height, width: '100%' }}
-      className="w-full rounded-lg overflow-hidden"
+      className="w-full rounded-sm overflow-hidden"
       onReady={({ controller }) => {
         if (asset) {
           controller.getSeries().applyOptions({

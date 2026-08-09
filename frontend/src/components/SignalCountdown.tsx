@@ -12,21 +12,24 @@ export default function SignalCountdown({ signal, onExpire }: SignalCountdownPro
   const now = Date.now()
   const remainingMs = expirationMs - now
   const isExpired = remainingMs <= 0
+  const isLong = signal.direccion === 1
+  const dirColor = isLong ? 'text-signal-long' : 'text-signal-short'
+  const dirLabel = isLong ? 'LONG' : 'SHORT'
 
   if (isExpired) {
     return (
-      <div className="bg-gray-800 rounded-lg p-3 border border-gray-700 opacity-60">
+      <div className="panel p-2.5 opacity-60">
         <div className="flex justify-between items-center mb-1">
-          <span className="text-xs font-bold text-gray-400">{signal.estrategia}</span>
-          <span className={`text-xs font-bold ${signal.direccion === 1 ? 'text-green-400' : 'text-red-400'}`}>
-            {signal.direccion === 1 ? 'LONG' : 'SHORT'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase">{signal.estrategia}</span>
+            <span className="font-mono text-[10px] px-1 border border-base-line text-text-muted">{signal.etiqueta?.replace('PIVOT_', '') || '—'}</span>
+          </div>
+          <span className={`font-condensed text-[11px] tracking-widest ${dirColor}`}>{dirLabel}</span>
         </div>
-        <div className="text-sm font-mono">{signal.precio?.toFixed(5)}</div>
-        <div className="text-xs text-gray-500 mt-1">Expirada</div>
-        <div className="flex gap-2 mt-2">
-          <span className="text-xs bg-gray-700 px-2 py-0.5 rounded">{signal.etiqueta}</span>
-          <span className="text-xs text-gray-500">{signal.confianza[0]}%-{signal.confianza[1]}%</span>
+        <div className="tabular text-sm text-text-primary">{signal.precio?.toFixed(5)}</div>
+        <div className="font-condensed text-[10px] text-text-muted mt-1 normal-case">Expired</div>
+        <div className="flex gap-2 mt-1.5">
+          <span className="font-mono text-[10px] text-text-secondary">{signal.confianza[0]}%-{signal.confianza[1]}%</span>
         </div>
       </div>
     )
@@ -36,21 +39,21 @@ export default function SignalCountdown({ signal, onExpire }: SignalCountdownPro
   const seconds = Math.floor((remainingMs % 60000) / 1000)
 
   return (
-    <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
+    <div className="panel p-2.5">
       <div className="flex justify-between items-center mb-1">
-        <span className="text-xs font-bold text-gray-400">{signal.estrategia}</span>
-        <span className={`text-xs font-bold ${signal.direccion === 1 ? 'text-green-400' : 'text-red-400'}`}>
-          {signal.direccion === 1 ? 'LONG' : 'SHORT'}
-        </span>
-      </div>
-      <div className="text-sm font-mono">{signal.precio?.toFixed(5)}</div>
-      <div className="text-xs text-gray-400 mt-1 line-clamp-1">{signal.narrativa}</div>
-      <div className="flex justify-between items-center mt-2">
-        <div className="flex gap-2">
-          <span className="text-xs bg-gray-700 px-2 py-0.5 rounded">{signal.etiqueta}</span>
-          <span className="text-xs bg-gray-700 px-2 py-0.5 rounded">{signal.confianza[0]}%-{signal.confianza[1]}%</span>
+        <div className="flex items-center gap-2">
+          <span className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase">{signal.estrategia}</span>
+          <span className="font-mono text-[10px] px-1 border border-base-line text-text-muted">{signal.etiqueta?.replace('PIVOT_', '') || '—'}</span>
         </div>
-        <div className="text-xs font-mono text-yellow-400 tabular-nums">
+        <span className={`font-condensed text-[11px] tracking-widest ${dirColor}`}>{dirLabel}</span>
+      </div>
+      <div className="tabular text-sm text-text-primary">{signal.precio?.toFixed(5)}</div>
+      <div className="font-condensed text-[11px] text-text-secondary mt-1 line-clamp-1 normal-case">{signal.narrativa}</div>
+      <div className="flex justify-between items-center mt-1.5">
+        <div className="flex gap-2">
+          <span className="font-mono text-[10px] text-text-secondary">{signal.confianza[0]}%-{signal.confianza[1]}%</span>
+        </div>
+        <div className="font-mono text-[11px] text-brand-cyan tabular">
           {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
         </div>
       </div>

@@ -2,4 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-body { @apply bg-gray-900 text-gray-100; }
+@layer base {
+  body {
+    @apply bg-base-bg text-text-primary font-sans antialiased;
+    font-feature-settings: "tnum" 1, "lnum" 1;
+  }
+  ::selection { background-color: rgba(55, 224, 196, 0.3); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { @apply bg-base-panel; }
+  ::-webkit-scrollbar-thumb { @apply bg-base-line; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-text-muted; }
+  :focus-visible { outline: 2px solid #37E0C4; outline-offset: 1px; }
+}
+
+@layer components {
+  .tabular { font-variant-numeric: tabular-nums; @apply font-mono; }
+  .panel { @apply bg-base-panel border border-base-line; }
+  .hairline-b { @apply border-b border-base-line; }
+  .hairline-t { @apply border-t border-base-line; }
+}

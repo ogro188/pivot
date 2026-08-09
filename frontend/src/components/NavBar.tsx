@@ -2,11 +2,26 @@ import { Link, useLocation } from 'react-router-dom'
 import { useStore } from '../store'
 
 const links = [
-  { to: '/', label: 'Hub' },
-  { to: '/backtest', label: 'Backtest' },
-  { to: '/estrategias', label: 'Estrategias' },
-  { to: '/config', label: 'Config' },
+  { to: '/', label: 'HUB' },
+  { to: '/backtest', label: 'BACKTEST' },
+  { to: '/estrategias', label: 'ESTRATEGIAS' },
+  { to: '/config', label: 'CONFIG' },
 ]
+
+function RadarSweep({ active }: { active: boolean }) {
+  return (
+    <div className="relative w-3.5 h-3.5 shrink-0">
+      <div className="absolute inset-0 rounded-full border border-base-line" />
+      {active && (
+        <div
+          className="absolute inset-0 rounded-full animate-radar-sweep"
+          style={{ background: 'conic-gradient(from 0deg, transparent 0%, transparent 75%, rgba(55,224,196,0.9) 100%)' }}
+        />
+      )}
+      <div className={`absolute inset-[3px] rounded-full ${active ? 'bg-brand-cyan/20' : 'bg-transparent'}`} />
+    </div>
+  )
+}
 
 export default function NavBar() {
   const loc = useLocation()
@@ -15,29 +30,38 @@ export default function NavBar() {
   const setSoundsEnabled = useStore((s) => s.setSoundsEnabled)
 
   return (
-    <nav className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex gap-4 items-center">
+    <nav className="bg-base-panel hairline-b px-3 h-11 flex items-center gap-1 font-condensed text-[13px] tracking-wide uppercase">
+      <div className="flex items-center gap-2 pr-3 mr-2 border-r border-base-line h-full">
+        <RadarSweep active={wsConnected} />
+        <span className="font-mono font-semibold text-text-primary tracking-tight normal-case text-sm">PV TERMINAL</span>
+      </div>
       {links.map((l) => (
         <Link
           key={l.to}
           to={l.to}
-          className={`px-3 py-1 rounded ${loc.pathname === l.to ? 'bg-blue-600 text-white' : 'text-gray-300 hover:text-white'}`}
+          className={`px-3 h-full flex items-center border-b-2 transition-colors ${
+            loc.pathname === l.to
+              ? 'border-brand-cyan text-text-primary'
+              : 'border-transparent text-text-secondary hover:text-text-primary hover:border-base-line'
+          }`}
         >
           {l.label}
         </Link>
       ))}
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-3">
         <button
           onClick={() => setSoundsEnabled(!soundsEnabled)}
-          className={`px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors ${
-            soundsEnabled ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+          className={`w-7 h-7 flex items-center justify-center border transition-colors ${
+            soundsEnabled ? 'border-brand-cyan/50 text-brand-cyan' : 'border-base-line text-text-muted hover:text-text-secondary'
           }`}
           title={soundsEnabled ? 'Desactivar sonidos' : 'Activar sonidos'}
         >
-          <span>{soundsEnabled ? '🔔' : '🔕'}</span>
-          <span className="hidden sm:inline">{soundsEnabled ? 'ON' : 'OFF'}</span>
+          {soundsEnabled ? '♪' : '✕'}
         </button>
-        <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span className="text-xs text-gray-400">{wsConnected ? 'WS' : 'OFF'}</span>
+        <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full">
+          <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-signal-long animate-pulse-dot' : 'bg-signal-short'}`} />
+          <span className="font-mono text-[11px] text-text-secondary normal-case">{wsConnected ? 'LIVE' : 'OFFLINE'}</span>
+        </div>
       </div>
     </nav>
   )

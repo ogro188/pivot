@@ -21,18 +21,18 @@ export default function ParamForm({
   return (
     <div className="space-y-4">
       {Object.entries(grupos).map(([g, keys]) => (
-        <div key={g} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <h4 className="text-sm font-bold text-gray-300 mb-2">{g}</h4>
+        <div key={g} className="panel p-3">
+          <h4 className="font-condensed text-[11px] tracking-widest uppercase text-text-secondary mb-2">{g}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {keys.map((k) => {
               const s = schema[k]
               const val = values[k] !== undefined ? values[k] : s.default
               return (
                 <div key={k}>
-                  <label className="block text-xs text-gray-400 mb-1">{s.label}</label>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">{s.label}</label>
                   {s.tipo === 'select' ? (
                     <select
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                      className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary"
                       value={val}
                       onChange={(e) => onChange(k, e.target.value)}
                     >
@@ -48,7 +48,7 @@ export default function ParamForm({
                     <input
                       type={s.tipo === 'int' || s.tipo === 'float' ? 'number' : 'text'}
                       min={s.min} max={s.max}
-                      className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm"
+                      className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular"
                       value={val}
                       onChange={(e) => onChange(k, s.tipo === 'int' ? parseInt(e.target.value) : s.tipo === 'float' ? parseFloat(e.target.value) : e.target.value)}
                     />
@@ -59,7 +59,7 @@ export default function ParamForm({
           </div>
         </div>
       ))}
-      <button onClick={onSubmit} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">
+      <button onClick={onSubmit} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors">
         Ejecutar Backtest
       </button>
     </div>

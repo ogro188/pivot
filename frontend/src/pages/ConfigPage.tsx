@@ -16,24 +16,24 @@ export default function ConfigPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Configuración</h1>
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 space-y-4 max-w-xl">
-        <h2 className="text-lg font-bold">Notificaciones ntfy</h2>
+    <div className="space-y-5">
+      <h1 className="font-condensed text-[13px] tracking-widest text-text-muted uppercase">Configuración</h1>
+      <div className="panel p-3 space-y-4 max-w-xl">
+        <h2 className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase">Notificaciones ntfy</h2>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Topic</label>
-          <input className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
+          <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
+          <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Server</label>
-          <input className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} />
+          <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Server</label>
+          <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} />
         </div>
-        <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm">Guardar</button>
-        {status && <div className="text-sm text-gray-400">{status}</div>}
+        <button onClick={handleSave} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors">Guardar</button>
+        {status && <div className="text-sm text-text-secondary">{status}</div>}
       </div>
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 max-w-xl">
-        <h2 className="text-lg font-bold mb-2">Instrucciones rápidas</h2>
-        <ul className="text-sm text-gray-400 space-y-1 list-disc list-inside">
+      <div className="panel p-3 max-w-xl">
+        <h2 className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase mb-2">Instrucciones rápidas</h2>
+        <ul className="font-condensed text-[11px] text-text-secondary space-y-1 list-disc list-inside normal-case">
           <li>Instala la app ntfy en tu móvil</li>
           <li>Suscribite al topic que pongas arriba</li>
           <li>Cuando una estrategia emita señal, llegará push</li>

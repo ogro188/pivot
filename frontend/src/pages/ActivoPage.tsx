@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import ChartHost from '../components/ChartHost'
 import SignalCard from '../components/SignalCard'
 import SignalCountdown from '../components/SignalCountdown'
+import DetectorReadout from '../components/DetectorReadout'
 
 const DEFAULT_PARAMS = {
   confianza_minima: 65,
@@ -15,6 +16,17 @@ const DEFAULT_PARAMS = {
   risk_por_operacion: 1.0,
   slippage_pips: 1.0,
   comision_lote: 0.5,
+}
+
+function normalizarDetectores(detectores?: string[]): string[] {
+  if (!detectores || !Array.isArray(detectores)) return []
+  const raices = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5']
+  const set = new Set<string>()
+  detectores.forEach((d) => {
+    const m =/^D[0-5]/.exec(String(d))
+    if (m && raices.includes(m[0])) set.add(m[0])
+  })
+  return raices.filter((r) => set.has(r))
 }
 
 export default function ActivoPage() {
@@ -106,6 +118,10 @@ export default function ActivoPage() {
     (s) => s.asset === simbolo && (s.timeframe || 'M15') === tf
   )
 
+  // Señal más reciente del activo (sin filtro de TF) para el readout de detectores
+  const ultimaSenal = globalSignals.find((s) => s.asset === simbolo && s.detectores && s.detectores.length > 0)
+  const detectoresActivos = normalizarDetectores(ultimaSenal?.detectores)
+
   // Config por activo
   const params = { ...DEFAULT_PARAMS, ...assetConfig }
   const handleParamChange = (k: string, v: any) => {
@@ -116,107 +132,133 @@ export default function ActivoPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">{simbolo}</h1>
+    <div>
+      <div className="flex justify-between items-center mb-3">
+        <h1 className="font-mono font-semibold text-base text-text-primary">{simbolo}</h1>
         <div className="flex gap-2">
-          <button onClick={handleStart} className={`px-3 py-1 rounded text-sm ${running ? 'bg-gray-600 text-gray-300 cursor-default' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
+          <button onClick={handleStart} className={`px-3 py-1 font-condensed text-[11px] tracking-widest uppercase transition-colors ${running ? 'bg-base-panel2 border border-base-line text-text-muted cursor-default' : 'border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10'}`}>
             {running ? 'Live' : 'Start'}
           </button>
-          <button onClick={handleStop} disabled={!running} className={`px-3 py-1 rounded text-sm ${running ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-700 text-gray-500 cursor-default'}`}>
+          <button onClick={handleStop} disabled={!running} className={`px-3 py-1 font-condensed text-[11px] tracking-widest uppercase transition-colors ${running ? 'border border-base-line text-text-secondary hover:text-text-primary' : 'bg-base-panel2 border border-base-line text-text-muted cursor-default'}`}>
             Stop
           </button>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+
+      <div className="flex flex-wrap items-center gap-2 mb-3">
         {['M15', 'H1', 'H4', 'D1'].map((t) => (
-          <button key={t} onClick={() => { setMultiTf(false); setTf(t) }} className={`text-xs px-2 py-1 rounded ${tf === t && !multiTf ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300'}`}>
+          <button key={t} onClick={() => { setMultiTf(false); setTf(t) }} className={`font-condensed text-[11px] px-2 py-1 tracking-widest transition-colors ${tf === t && !multiTf ? 'border border-brand-cyan bg-brand-cyan/10 text-brand-cyan' : 'border border-base-line bg-base-panel text-text-secondary hover:text-text-primary'}`}>
             {t}
           </button>
         ))}
-        <label className="flex items-center gap-1 text-sm text-gray-300">
-          <input type="checkbox" checked={multiTf} onChange={(e) => setMultiTf(e.target.checked)} className="w-4 h-4 accent-blue-600" />
+        <label className="flex items-center gap-1 font-condensed text-[11px] text-text-secondary uppercase tracking-widest">
+          <input type="checkbox" checked={multiTf} onChange={(e) => setMultiTf(e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
           Multi-TF
         </label>
       </div>
 
-      {/* Charts */}
-      {!multiTf ? (
-        <ChartHost candles={candles} signals={currentSignals} height={400} asset={asset} id={`${simbolo}:${tf}`} />
-      ) : (
-        <div className="space-y-4">
-          <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} id={`${simbolo}:M15`} />
-          <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} id={`${simbolo}:H1`} />
-          <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} id={`${simbolo}:H4`} />
-        </div>
-      )}
+      <div className="flex flex-col xl:flex-row xl:gap-3">
+        {/* Columna principal: charts + tabs */}
+        <div className="flex-1 min-w-0">
+          {/* Charts */}
+          {!multiTf ? (
+            <ChartHost candles={candles} signals={currentSignals} height={400} asset={asset} id={`${simbolo}:${tf}`} />
+          ) : (
+            <div className="space-y-3">
+              <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} id={`${simbolo}:M15`} />
+              <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} id={`${simbolo}:H1`} />
+              <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} id={`${simbolo}:H4`} />
+            </div>
+          )}
 
-      <div className="flex gap-2 border-b border-gray-700 pb-2">
-        {(['signals', 'consola', 'strategies'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`px-3 py-1 rounded text-sm ${tab === t ? 'bg-gray-700 text-white' : 'text-gray-400'}`}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-      {tab === 'signals' && (
-        <div className="space-y-2">
-          {signals?.map((s: any) => <SignalCard key={`${s.id}-${s.ts}`} signal={s} />)}
-          {(!signals || signals.length === 0) && (
-            <div className="text-gray-500 text-sm">No hay señales aún. Inicia el activo para generar el replay.</div>
+          <div className="flex gap-2 border-b border-base-line pb-2 mt-3">
+            {(['signals', 'consola', 'strategies'] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)} className={`font-condensed text-[11px] tracking-widest uppercase px-2 py-1 ${tab === t ? 'text-brand-cyan border-b-2 border-brand-cyan' : 'text-text-secondary hover:text-text-primary'}`}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+          {tab === 'signals' && (
+            <div className="space-y-2 mt-2">
+              {signals?.map((s: any) => <SignalCard key={`${s.id}-${s.ts}`} signal={s} />)}
+              {(!signals || signals.length === 0) && (
+                <div className="text-text-muted text-sm">No hay señales aún. Inicia el activo para generar el replay.</div>
+              )}
+            </div>
+          )}
+          {tab === 'consola' && (
+            <div className="bg-base-panel border border-base-line p-3 font-mono text-xs space-y-1 max-h-96 overflow-y-auto mt-2">
+              {logs?.map((l: any, i: number) => (
+                <div key={i} className={`${l.level === 'ERROR' ? 'font-bold text-text-primary' : l.level === 'WARN' ? 'text-text-primary' : 'text-text-secondary'}`}>
+                  <span className="text-text-muted">{l.t}</span> <span className="font-bold text-text-primary">{l.cat}</span> {l.msg}
+                </div>
+              ))}
+              {(!logs || logs.length === 0) && (
+                <div className="text-text-muted">Sin logs.</div>
+              )}
+            </div>
+          )}
+          {tab === 'strategies' && (
+            <div className="mt-2 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Confianza mínima</label>
+                  <input type="number" min="0" max="100" step="1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.confianza_minima} onChange={(e) => handleParamChange('confianza_minima', parseInt(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Reward ratio mínimo</label>
+                  <input type="number" min="0.5" max="5" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.reward_ratio_min} onChange={(e) => handleParamChange('reward_ratio_min', parseFloat(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Risk % por operación</label>
+                  <input type="number" min="0.1" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.risk_por_operacion} onChange={(e) => handleParamChange('risk_por_operacion', parseFloat(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Slippage (pips)</label>
+                  <input type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.slippage_pips} onChange={(e) => handleParamChange('slippage_pips', parseFloat(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Comisión por lote</label>
+                  <input type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.comision_lote} onChange={(e) => handleParamChange('comision_lote', parseFloat(e.target.value))} />
+                </div>
+                <div className="flex items-end gap-3">
+                  <label className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
+                    <input type="checkbox" checked={params.usar_kill_zones} onChange={(e) => handleParamChange('usar_kill_zones', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
+                    Usar Kill Zones
+                  </label>
+                  <label className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
+                    <input type="checkbox" checked={params.usar_trend_d1} onChange={(e) => handleParamChange('usar_trend_d1', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
+                    Usar Trend D1
+                  </label>
+                </div>
+                <button onClick={handleResetParams} className="bg-base-panel2 hover:bg-base-line text-text-secondary px-3 py-1 font-condensed text-[11px] tracking-widest uppercase transition-colors">
+                  Restablecer defaults
+                </button>
+              </div>
+            </div>
           )}
         </div>
-      )}
-      {tab === 'consola' && (
-        <div className="bg-gray-800 rounded-lg p-3 font-mono text-xs space-y-1 max-h-96 overflow-y-auto">
-          {logs?.map((l: any, i: number) => (
-            <div key={i} className={`${l.level === 'ERROR' ? 'text-red-400' : l.level === 'WARN' ? 'text-yellow-400' : 'text-gray-300'}`}>
-              <span className="text-gray-500">{l.t}</span> <span className="font-bold">{l.cat}</span> {l.msg}
+
+        {/* Rail derecho */}
+        <div className="xl:w-64 shrink-0 mt-4 xl:mt-0 space-y-3">
+          <DetectorReadout activos={detectoresActivos} />
+          <div className="panel p-2.5 space-y-1.5">
+            <div className="font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-2">Sesión</div>
+            <div className="flex justify-between items-center">
+              <span className="font-condensed text-[11px] text-text-secondary uppercase tracking-widest">Sesión</span>
+              <span className="font-mono text-[11px] text-text-primary tabular">{asset?.session || '—'}</span>
             </div>
-          ))}
-          {(!logs || logs.length === 0) && (
-            <div className="text-gray-500">Sin logs.</div>
-          )}
-        </div>
-      )}
-      {tab === 'strategies' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Confianza mínima</label>
-              <input type="number" min="0" max="100" step="1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={params.confianza_minima} onChange={(e) => handleParamChange('confianza_minima', parseInt(e.target.value))} />
+            <div className="flex justify-between items-center">
+              <span className="font-condensed text-[11px] text-text-secondary uppercase tracking-widest">Kill Zone</span>
+              <span className="font-mono text-[11px] text-text-primary tabular">{asset?.kill_zone || '—'}</span>
             </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Reward ratio mínimo</label>
-              <input type="number" min="0.5" max="5" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={params.reward_ratio_min} onChange={(e) => handleParamChange('reward_ratio_min', parseFloat(e.target.value))} />
+            <div className="flex justify-between items-center">
+              <span className="font-condensed text-[11px] text-text-secondary uppercase tracking-widest">Detectores DF</span>
+              <span className="font-mono text-[11px] text-brand-cyan tabular">{detectoresActivos.length} D</span>
             </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Risk % por operación</label>
-              <input type="number" min="0.1" max="10" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={params.risk_por_operacion} onChange={(e) => handleParamChange('risk_por_operacion', parseFloat(e.target.value))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Slippage (pips)</label>
-              <input type="number" min="0" max="10" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={params.slippage_pips} onChange={(e) => handleParamChange('slippage_pips', parseFloat(e.target.value))} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Comisión por lote</label>
-              <input type="number" min="0" max="10" step="0.1" className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm" value={params.comision_lote} onChange={(e) => handleParamChange('comision_lote', parseFloat(e.target.value))} />
-            </div>
-            <div className="flex items-end gap-2">
-              <label className="flex items-center gap-1 text-sm">
-                <input type="checkbox" checked={params.usar_kill_zones} onChange={(e) => handleParamChange('usar_kill_zones', e.target.checked)} className="w-4 h-4 accent-blue-600" />
-                Usar Kill Zones
-              </label>
-              <label className="flex items-center gap-1 text-sm">
-                <input type="checkbox" checked={params.usar_trend_d1} onChange={(e) => handleParamChange('usar_trend_d1', e.target.checked)} className="w-4 h-4 accent-blue-600" />
-                Usar Trend D1
-              </label>
-            </div>
-            <button onClick={handleResetParams} className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm">
-              Restablecer defaults
-            </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
