@@ -25,7 +25,12 @@ logger = logging.getLogger("deriv-ws")
 
 async def run_deriv_feed():
     """Crea y ejecuta el feed Deriv hasta señal de parada."""
-    app_id = int(os.getenv("DERIV_APP_ID", "1089"))
+    raw_app_id = os.getenv("DERIV_APP_ID", "1089")
+    try:
+        app_id = int(raw_app_id)
+    except ValueError:
+        logger.warning(f"DERIV_APP_ID no numérico ('{raw_app_id}'), usando app_id público 1089")
+        app_id = 1089
     symbol = os.getenv("DERIV_SYMBOL", "R_100")
     timeframes = os.getenv("DERIV_TIMEFRAMES", "M15,H1").split(",")
     api_token = os.getenv("DERIV_API_TOKEN") or None
@@ -83,13 +88,25 @@ async def run_deriv_feed():
             pass  # Windows o entorno sin señales
 
     logger.info(f"Iniciando DerivFeed: symbol={symbol}, timeframes={timeframes}")
-    await feed.start()
+
+    connected = await feed.connect()
+    if not connected:
+        logger.error("No se pudo conectar a Deriv API. Abortando.")
+        sys.exit(1)
+
+    # Bucle de recepción en background (processa ticks/ohlc/historial/auth)
+    run_task = asyncio.create_task(feed.run())
 
     # Mantener vivo hasta stop
     await stop_event.wait()
 
     logger.info("Deteniendo DerivFeed...")
-    await feed.stop()
+    feed.stop()
+    run_task.cancel()
+    try:
+        await run_task
+    except asyncio.CancelledError:
+        pass
     logger.info("DerivFeed detenido correctamente")
 
 

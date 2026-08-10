@@ -59,6 +59,7 @@ class DerivFeed:
         self._max_reconnect_delay = 60
         self._pending_history: Dict[int, asyncio.Future] = {}
         self._request_id = 0
+        self._auth_failures = 0
 
     def add_callback(self, event: str, callback: Callable):
         """Registrar callback para evento"""
@@ -83,6 +84,7 @@ class DerivFeed:
         url = f"{self.WS_URL}?app_id={self.config.app_id}"
         try:
             self.ws = await websockets.connect(url, ping_interval=30, ping_timeout=10)
+            self._reconnect_delay = 5
             logger.info(f"Conectado a Deriv API")
 
             # Autenticar si hay token
@@ -93,6 +95,10 @@ class DerivFeed:
 
             # Suscribirse a ticks por defecto
             await self._subscribe_ticks(self.config.symbol)
+
+            # Suscribirse a OHLC para cada timeframe configurado
+            for tf in self.config.timeframes:
+                await self.subscribe_ohlc(self.config.symbol, self.get_granularity(tf))
 
             return True
         except Exception as e:
@@ -116,7 +122,7 @@ class DerivFeed:
         }))
         logger.info(f"Suscrito a ticks de {symbol}")
 
-    async def _next_request_id(self) -> int:
+    def _next_request_id(self) -> int:
         self._request_id += 1
         return self._request_id
 
@@ -176,6 +182,7 @@ class DerivFeed:
             "ticks_history": symbol,
             "granularity": granularity,
             "style": "candles",
+            "end": "latest",
             "subscribe": 1
         }))
         logger.info(f"Suscrito a OHLC {symbol} granularity={granularity}")
@@ -267,14 +274,24 @@ class DerivFeed:
 
     async def _on_authorize(self, data: Dict[str, Any]):
         """Handler para respuesta de autorización"""
-        authorize = data.get("authorize", {})
-        if "error" in authorize:
-            logger.error(f"Error de autorización: {authorize['error'].get('message', 'Unknown')}")
-            self._trigger_callback('error', authorize['error'])
+        error = data.get("error")
+        if error:
+            code = error.get("code", "Unknown")
+            message = error.get("message", "Unknown")
+            logger.error(f"Error de autorización: {message} (código {code})")
+            self._trigger_callback('error', error)
+
+            self._auth_failures += 1
+            if self._auth_failures >= 3:
+                logger.error("Token inválido o expirado. Deteniendo reintentos.")
+                self.running = False
+
             if self.ws:
                 await self.ws.close()
                 self.ws = None
         else:
+            self._auth_failures = 0
+            authorize = data.get("authorize", {})
             email = authorize.get("email", "unknown")
             currency = authorize.get("currency", "unknown")
             balance = authorize.get("balance", "unknown")
