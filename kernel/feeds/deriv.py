@@ -1,46 +1,50 @@
 """
-Feed en tiempo real desde Deriv API (WebSocket)
-Soporta autenticación, historial de velas, suscripción OHLC y reconexión automática
+Feed en tiempo real desde Deriv API (WebSocket - API 2026)
+Soporta autenticación (OTP), historial de velas, suscripción OHLC y reconexión automática.
 """
-
+import urllib.request
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional, Callable, Dict, Any, List, Awaitable
+from typing import Optional, Callable, Dict, Any, List
 import websockets
 
 logger = logging.getLogger(__name__)
 
 
 class DerivConfig:
-    """Configuración para conexión Deriv"""
+    """Configuración para conexión Deriv (nueva API api.derivws.com)"""
     def __init__(
         self,
-        app_id: int = 1089,
-        symbol: str = "R_100",
+        app_id: Optional[str] = None,
+        symbol: str = "1HZ100V",
         timeframes: List[str] = None,
-        api_token: Optional[str] = None
+        api_token: Optional[str] = None,
+        account_id: Optional[str] = None,
+        account_type: str = "demo"
     ):
         self.app_id = app_id
         self.symbol = symbol
         self.timeframes = timeframes or ["M15", "H1"]
         self.api_token = api_token
+        self.account_id = account_id
+        self.account_type = account_type
 
 
 class DerivFeed:
     """
-    Feed en tiempo real desde Deriv API
-    
+    Feed en tiempo real desde Deriv API (nueva API).
+
     Características:
-    - Conexión WebSocket persistente con autenticación opcional
+    - WebSocket público sin autenticación o autenticado vía OTP (PAT token)
     - Historial de velas vía WebSocket (ticks_history)
     - Suscripción a velas oficiales OHLC en tiempo real
     - Reconexión automática con backoff exponencial
     - Callbacks asíncronos para ticks, velas OHLC, historial y errores
     """
 
-    WS_URL = "wss://ws.binaryws.com/websockets/v3"
+    REST_BASE = "https://api.derivws.com"
+    PUBLIC_WS_URL = "wss://api.derivws.com/trading/v1/options/ws/public"
 
     def __init__(self, config: DerivConfig):
         self.config = config
@@ -79,19 +83,52 @@ class DerivFeed:
             except Exception as e:
                 logger.error(f"Error en callback {event}: {e}")
 
-    async def connect(self) -> bool:
-        """Establecer conexión WebSocket y autenticar si hay token"""
-        url = f"{self.WS_URL}?app_id={self.config.app_id}"
-        try:
-            self.ws = await websockets.connect(url, ping_interval=30, ping_timeout=10)
-            self._reconnect_delay = 5
-            logger.info(f"Conectado a Deriv API")
+    def _request_headers(self) -> Dict[str, str]:
+        headers = {
+            "Deriv-App-ID": self.config.app_id or "",
+            "Content-Type": "application/json"
+        }
+        if self.config.api_token:
+            headers["Authorization"] = f"Bearer {self.config.api_token}"
+        return headers
 
-            # Autenticar si hay token
+    def _resolve_account_id(self) -> str:
+        """Obtener el account_id (demo/real) desde la API REST"""
+        req = urllib.request.Request(f"{self.REST_BASE}/trading/v1/options/accounts", headers=self._request_headers())
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        accounts = data.get("data", [])
+        for acc in accounts:
+            if acc.get("account_type") == self.config.account_type and acc.get("status") == "active":
+                return acc["account_id"]
+        if accounts:
+            return accounts[0]["account_id"]
+        raise RuntimeError("No hay cuentas Deriv disponibles")
+
+    def _get_otp_url(self) -> str:
+        """Obtener URL WebSocket autenticada vía endpoint OTP"""
+        account_id = self.config.account_id or self._resolve_account_id()
+        url = f"{self.REST_BASE}/trading/v1/options/accounts/{account_id}/otp"
+        req = urllib.request.Request(url, data=b"{}", method="POST", headers=self._request_headers())
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        ws_url = data["data"]["url"]
+        logger.info(f"OTP obtenido para cuenta {account_id}")
+        return ws_url
+
+    async def connect(self) -> bool:
+        """Establecer conexión WebSocket (pública o autenticada via OTP)"""
+        try:
             if self.config.api_token:
-                await self._authorize(self.config.api_token)
+                ws_url = await asyncio.to_thread(self._get_otp_url)
+                self.ws = await websockets.connect(ws_url, ping_interval=30, ping_timeout=10)
+                self._reconnect_delay = 5
+                logger.info("Conectado a Deriv API (autenticado)")
+                await self._authorize()
             else:
-                logger.info("Sin token API, operando en modo público")
+                self.ws = await websockets.connect(self.PUBLIC_WS_URL, ping_interval=30, ping_timeout=10)
+                self._reconnect_delay = 5
+                logger.info("Conectado a Deriv API (modo público)")
 
             # Suscribirse a ticks por defecto
             await self._subscribe_ticks(self.config.symbol)
@@ -105,11 +142,11 @@ class DerivFeed:
             logger.error(f"Error conectando a Deriv: {e}")
             return False
 
-    async def _authorize(self, token: str):
-        """Enviar solicitud de autorización"""
+    async def _authorize(self):
+        """Solicitar autorización de la sesión OTP actual"""
         req_id = self._next_request_id()
         await self.ws.send(json.dumps({
-            "authorize": token,
+            "authorize": 1,
             "req_id": req_id
         }))
         logger.info("Enviada solicitud de autorización")
@@ -136,7 +173,7 @@ class DerivFeed:
         Obtener historial de velas via WebSocket (ticks_history)
         
         Args:
-            symbol: Símbolo (ej. R_100, frxEURUSD)
+            symbol: Símbolo (ej. 1HZ100V)
             granularity: Granularidad en segundos (60, 300, 900, 3600, 14400, 86400)
             count: Número de velas a obtener
         
@@ -172,7 +209,7 @@ class DerivFeed:
         Suscribirse a velas oficiales OHLC en tiempo real
         
         Args:
-            symbol: Símbolo (ej. R_100)
+            symbol: Símbolo (ej. 1HZ100V)
             granularity: Granularidad en segundos (900 = M15, 3600 = H1, etc.)
         """
         if not self.ws:
@@ -224,7 +261,7 @@ class DerivFeed:
             await self._on_tick(data)
         elif msg_type == "ohlc":
             await self._on_ohlc(data)
-        elif msg_type == "history":
+        elif msg_type in ("candles", "history"):
             await self._on_history(data)
         elif msg_type == "authorize":
             await self._on_authorize(data)
@@ -247,15 +284,15 @@ class DerivFeed:
             "symbol": ohlc.get("symbol"),
             "granularity": ohlc.get("granularity"),
             "open_time": ohlc.get("open_time"),
-            "open": float(ohlc.get("open_price", 0)),
-            "high": float(ohlc.get("high_price", 0)),
-            "low": float(ohlc.get("low_price", 0)),
-            "close": float(ohlc.get("close_price", 0)),
+            "open": float(ohlc.get("open", ohlc.get("open_price", 0))),
+            "high": float(ohlc.get("high", ohlc.get("high_price", 0))),
+            "low": float(ohlc.get("low", ohlc.get("low_price", 0))),
+            "close": float(ohlc.get("close", ohlc.get("close_price", 0))),
         }
         self._trigger_callback('ohlc', candle)
 
     async def _on_history(self, data: Dict[str, Any]):
-        """Handler para respuesta de historial"""
+        """Handler para respuesta de historial (msg_type 'candles' en la API nueva)"""
         req_id = data.get("req_id")
         future = self._pending_history.pop(req_id, None)
         if future and not future.done():
@@ -292,10 +329,10 @@ class DerivFeed:
         else:
             self._auth_failures = 0
             authorize = data.get("authorize", {})
-            email = authorize.get("email", "unknown")
+            loginid = authorize.get("loginid", "unknown")
             currency = authorize.get("currency", "unknown")
             balance = authorize.get("balance", "unknown")
-            logger.info(f"Autenticado: {email} | {currency} {balance}")
+            logger.info(f"Autenticado: {loginid} | {currency} {balance}")
             self._trigger_callback('authorize', authorize)
 
     async def _on_error(self, data: Dict[str, Any]):
@@ -336,7 +373,7 @@ class DerivFeed:
 
 
 def create_deriv_feed(
-    symbol: str = "R_100",
+    symbol: str = "1HZ100V",
     timeframes: List[str] = None,
     api_token: Optional[str] = None,
     on_candle: Optional[Callable] = None

@@ -25,15 +25,12 @@ logger = logging.getLogger("deriv-ws")
 
 async def run_deriv_feed():
     """Crea y ejecuta el feed Deriv hasta señal de parada."""
-    raw_app_id = os.getenv("DERIV_APP_ID", "1089")
-    try:
-        app_id = int(raw_app_id)
-    except ValueError:
-        logger.warning(f"DERIV_APP_ID no numérico ('{raw_app_id}'), usando app_id público 1089")
-        app_id = 1089
-    symbol = os.getenv("DERIV_SYMBOL", "R_100")
+    app_id = os.getenv("DERIV_APP_ID") or None
+    symbol = os.getenv("DERIV_SYMBOL", "1HZ100V")
     timeframes = os.getenv("DERIV_TIMEFRAMES", "M15,H1").split(",")
     api_token = os.getenv("DERIV_API_TOKEN") or None
+    account_type = os.getenv("DERIV_ACCOUNT_TYPE", "demo")
+    account_id = os.getenv("DERIV_ACCOUNT_ID") or None
 
     if api_token:
         logger.info("Token Deriv detectado, autenticando...")
@@ -44,22 +41,21 @@ async def run_deriv_feed():
         app_id=app_id,
         symbol=symbol,
         timeframes=timeframes,
-        api_token=api_token
+        api_token=api_token,
+        account_id=account_id,
+        account_type=account_type
     )
     feed = DerivFeed(config)
 
     # Callbacks básicos para logging
-    def on_candle(tf: str, candle: dict):
-        logger.debug(f"OHLC {tf}: {candle}")
-
+    def on_candle(candle: dict):
+        logger.debug(f"OHLC: {candle}")
     def on_tick(tick: dict):
         logger.debug(f"Tick: {tick}")
-
     def on_history(candles: list):
         logger.info(f"Historial recibido: {len(candles)} velas")
-
     def on_authorize(auth: dict):
-        logger.info(f"Autorizado: {auth.get('email', 'N/A')}")
+        logger.info(f"Autorizado: {auth.get('loginid', auth.get('email', 'N/A'))}")
 
     def on_error(error: dict):
         logger.error(f"Error Deriv: {error}")
