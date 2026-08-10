@@ -1,13 +1,13 @@
 """
 Feed en tiempo real desde Deriv API (WebSocket)
-Soporta múltiples timeframes y reconexión automática
+Soporta autenticación, historial de velas, suscripción OHLC y reconexión automática
 """
 
 import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Callable, Dict, Any, List
+from typing import Optional, Callable, Dict, Any, List, Awaitable
 import websockets
 
 logger = logging.getLogger(__name__)
@@ -19,11 +19,13 @@ class DerivConfig:
         self,
         app_id: int = 1089,
         symbol: str = "R_100",
-        timeframes: List[str] = None
+        timeframes: List[str] = None,
+        api_token: Optional[str] = None
     ):
         self.app_id = app_id
         self.symbol = symbol
         self.timeframes = timeframes or ["M15", "H1"]
+        self.api_token = api_token
 
 
 class DerivFeed:
@@ -31,38 +33,40 @@ class DerivFeed:
     Feed en tiempo real desde Deriv API
     
     Características:
-    - Conexión WebSocket persistente
+    - Conexión WebSocket persistente con autenticación opcional
+    - Historial de velas vía WebSocket (ticks_history)
+    - Suscripción a velas oficiales OHLC en tiempo real
     - Reconexión automática con backoff exponencial
-    - Soporte multi-timeframe
-    - Callbacks asíncronos para nuevas velas
-    - Buffer histórico opcional
+    - Callbacks asíncronos para ticks, velas OHLC, historial y errores
     """
-    
+
     WS_URL = "wss://ws.binaryws.com/websockets/v3"
-    
+
     def __init__(self, config: DerivConfig):
         self.config = config
         self.ws: Optional[websockets.WebSocketClientProtocol] = None
         self.running = False
         self.callbacks: Dict[str, List[Callable]] = {
-            'candle': [],
             'tick': [],
+            'ohlc': [],
+            'history': [],
+            'authorize': [],
             'error': [],
             'reconnect': []
         }
-        self.buffers: Dict[str, List[Dict]] = {tf: [] for tf in config.timeframes}
-        self.current_candles: Dict[str, Optional[Dict]] = {tf: None for tf in config.timeframes}
         self._task: Optional[asyncio.Task] = None
         self._reconnect_delay = 5
         self._max_reconnect_delay = 60
-        
+        self._pending_history: Dict[int, asyncio.Future] = {}
+        self._request_id = 0
+
     def add_callback(self, event: str, callback: Callable):
         """Registrar callback para evento"""
         if event in self.callbacks:
             self.callbacks[event].append(callback)
         else:
             raise ValueError(f"Evento desconocido: {event}")
-    
+
     def _trigger_callback(self, event: str, *args, **kwargs):
         """Ejecutar callbacks registrados"""
         for callback in self.callbacks.get(event, []):
@@ -73,107 +77,123 @@ class DerivFeed:
                     callback(*args, **kwargs)
             except Exception as e:
                 logger.error(f"Error en callback {event}: {e}")
-    
-    async def connect(self):
-        """Establecer conexión WebSocket"""
+
+    async def connect(self) -> bool:
+        """Establecer conexión WebSocket y autenticar si hay token"""
         url = f"{self.WS_URL}?app_id={self.config.app_id}"
         try:
             self.ws = await websockets.connect(url, ping_interval=30, ping_timeout=10)
             logger.info(f"Conectado a Deriv API")
-            
-            # Suscribirse a ticks
-            subscribe_msg = {
-                "ticks": self.config.symbol,
-                "subscribe": 1
-            }
-            await self.ws.send(json.dumps(subscribe_msg))
-            logger.info(f"Suscrito a ticks de {self.config.symbol}")
-            
+
+            # Autenticar si hay token
+            if self.config.api_token:
+                await self._authorize(self.config.api_token)
+            else:
+                logger.info("Sin token API, operando en modo público")
+
+            # Suscribirse a ticks por defecto
+            await self._subscribe_ticks(self.config.symbol)
+
             return True
         except Exception as e:
             logger.error(f"Error conectando a Deriv: {e}")
             return False
-    
-    async def _process_tick(self, tick_data: Dict[str, Any]):
-        """Procesar tick recibido y actualizar velas"""
-        quote = tick_data.get('quote')
-        if not quote:
-            return
-            
-        timestamp = datetime.fromtimestamp(tick_data.get('epoch', 0), tz=timezone.utc)
-        price = float(quote)
+
+    async def _authorize(self, token: str):
+        """Enviar solicitud de autorización"""
+        req_id = self._next_request_id()
+        await self.ws.send(json.dumps({
+            "authorize": token,
+            "req_id": req_id
+        }))
+        logger.info("Enviada solicitud de autorización")
+
+    async def _subscribe_ticks(self, symbol: str):
+        """Suscribirse a ticks de un símbolo"""
+        await self.ws.send(json.dumps({
+            "ticks": symbol,
+            "subscribe": 1
+        }))
+        logger.info(f"Suscrito a ticks de {symbol}")
+
+    async def _next_request_id(self) -> int:
+        self._request_id += 1
+        return self._request_id
+
+    async def fetch_candles_history(
+        self,
+        symbol: str,
+        granularity: int,
+        count: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtener historial de velas via WebSocket (ticks_history)
         
-        # Actualizar vela actual para cada timeframe
-        for tf in self.config.timeframes:
-            candle = self._update_candle(tf, timestamp, price)
-            if candle:
-                self._trigger_callback('candle', tf, candle)
-    
-    def _update_candle(self, tf: str, timestamp: datetime, price: float) -> Optional[Dict]:
-        """Actualizar vela del timeframe especificado"""
-        # Calcular inicio de vela
-        tf_seconds = {
-            'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800,
-            'H1': 3600, 'H4': 14400, 'D1': 86400
-        }.get(tf, 900)
+        Args:
+            symbol: Símbolo (ej. R_100, frxEURUSD)
+            granularity: Granularidad en segundos (60, 300, 900, 3600, 14400, 86400)
+            count: Número de velas a obtener
         
-        candle_start_ts = int(timestamp.timestamp()) // tf_seconds * tf_seconds
-        candle_start = datetime.fromtimestamp(candle_start_ts, tz=timezone.utc)
+        Returns:
+            Lista de velas con campos: open, high, low, close, epoch
+        """
+        if not self.ws:
+            raise RuntimeError("No hay conexión WebSocket activa")
+
+        req_id = self._next_request_id()
+        future = asyncio.get_event_loop().create_future()
+        self._pending_history[req_id] = future
+
+        await self.ws.send(json.dumps({
+            "ticks_history": symbol,
+            "granularity": granularity,
+            "count": count,
+            "style": "candles",
+            "end": "latest",
+            "req_id": req_id
+        }))
+        logger.info(f"Solicitado historial: {symbol} granularity={granularity} count={count}")
+
+        try:
+            result = await asyncio.wait_for(future, timeout=30)
+            return result
+        except asyncio.TimeoutError:
+            self._pending_history.pop(req_id, None)
+            raise TimeoutError(f"Timeout obteniendo historial para {symbol}")
+
+    async def subscribe_ohlc(self, symbol: str, granularity: int):
+        """
+        Suscribirse a velas oficiales OHLC en tiempo real
         
-        current = self.current_candles[tf]
-        
-        # Crear o actualizar vela actual
-        if current is None or current['timestamp'] != candle_start:
-            # Nueva vela - guardar la anterior si existe
-            if current:
-                pass  # Vela completada
-            
-            new_candle = {
-                'timestamp': candle_start,
-                'open': price,
-                'high': price,
-                'low': price,
-                'close': price,
-                'volume': 0
-            }
-            self.current_candles[tf] = new_candle
-            self.buffers[tf].append(new_candle)
-            
-            # Mantener buffer limitado
-            if len(self.buffers[tf]) > 500:
-                self.buffers[tf] = self.buffers[tf][-500:]
-            
-            return new_candle
-        else:
-            # Actualizar vela existente
-            current['high'] = max(current['high'], price)
-            current['low'] = min(current['low'], price)
-            current['close'] = price
-            return current
-    
+        Args:
+            symbol: Símbolo (ej. R_100)
+            granularity: Granularidad en segundos (900 = M15, 3600 = H1, etc.)
+        """
+        if not self.ws:
+            raise RuntimeError("No hay conexión WebSocket activa")
+
+        await self.ws.send(json.dumps({
+            "ticks_history": symbol,
+            "granularity": granularity,
+            "style": "candles",
+            "subscribe": 1
+        }))
+        logger.info(f"Suscrito a OHLC {symbol} granularity={granularity}")
+
     async def run(self):
         """Bucle principal de recepción de datos"""
         self.running = True
-        
+
         while self.running:
             try:
                 if not self.ws:
                     if not await self.connect():
                         await self._wait_reconnect()
                         continue
-                
+
                 message = await asyncio.wait_for(self.ws.recv(), timeout=30)
-                data = json.loads(message)
-                
-                # Manejar diferentes tipos de mensajes
-                if 'tick' in data:
-                    await self._process_tick(data['tick'])
-                elif 'error' in data:
-                    logger.error(f"Error de Deriv: {data['error']}")
-                    self._trigger_callback('error', data['error'])
-                elif 'msg_type' in data and data['msg_type'] == 'subscription':
-                    logger.info("Suscripción confirmada")
-                    
+                await self._handle_message(json.loads(message))
+
             except asyncio.TimeoutError:
                 try:
                     await self.ws.ping()
@@ -188,98 +208,108 @@ class DerivFeed:
                 logger.error(f"Error procesando mensaje: {e}")
                 self.ws = None
                 await self._wait_reconnect()
-    
+
+    async def _handle_message(self, data: Dict[str, Any]):
+        """Router de mensajes según tipo"""
+        msg_type = data.get("msg_type")
+
+        if msg_type == "tick":
+            await self._on_tick(data)
+        elif msg_type == "ohlc":
+            await self._on_ohlc(data)
+        elif msg_type == "history":
+            await self._on_history(data)
+        elif msg_type == "authorize":
+            await self._on_authorize(data)
+        elif msg_type == "error":
+            await self._on_error(data)
+        elif msg_type == "subscription":
+            logger.info(f"Suscripción confirmada: {data}")
+        else:
+            logger.warning(f"Mensaje desconocido: {data}")
+
+    async def _on_tick(self, data: Dict[str, Any]):
+        """Handler para ticks"""
+        tick = data.get("tick", {})
+        self._trigger_callback('tick', tick)
+
+    async def _on_ohlc(self, data: Dict[str, Any]):
+        """Handler para velas OHLC oficiales"""
+        ohlc = data.get("ohlc", {})
+        candle = {
+            "symbol": ohlc.get("symbol"),
+            "granularity": ohlc.get("granularity"),
+            "open_time": ohlc.get("open_time"),
+            "open": float(ohlc.get("open_price", 0)),
+            "high": float(ohlc.get("high_price", 0)),
+            "low": float(ohlc.get("low_price", 0)),
+            "close": float(ohlc.get("close_price", 0)),
+        }
+        self._trigger_callback('ohlc', candle)
+
+    async def _on_history(self, data: Dict[str, Any]):
+        """Handler para respuesta de historial"""
+        req_id = data.get("req_id")
+        future = self._pending_history.pop(req_id, None)
+        if future and not future.done():
+            candles = []
+            for c in data.get("candles", []):
+                candles.append({
+                    "epoch": c.get("epoch"),
+                    "open": float(c.get("open", 0)),
+                    "high": float(c.get("high", 0)),
+                    "low": float(c.get("low", 0)),
+                    "close": float(c.get("close", 0)),
+                    "volume": int(c.get("volume", 0))
+                })
+            future.set_result(candles)
+            logger.info(f"Recibido historial: {len(candles)} velas")
+
+    async def _on_authorize(self, data: Dict[str, Any]):
+        """Handler para respuesta de autorización"""
+        authorize = data.get("authorize", {})
+        if "error" in authorize:
+            logger.error(f"Error de autorización: {authorize['error'].get('message', 'Unknown')}")
+            self._trigger_callback('error', authorize['error'])
+            if self.ws:
+                await self.ws.close()
+                self.ws = None
+        else:
+            email = authorize.get("email", "unknown")
+            currency = authorize.get("currency", "unknown")
+            balance = authorize.get("balance", "unknown")
+            logger.info(f"Autenticado: {email} | {currency} {balance}")
+            self._trigger_callback('authorize', authorize)
+
+    async def _on_error(self, data: Dict[str, Any]):
+        """Handler para errores"""
+        error = data.get("error", {})
+        msg = error.get("message", "Error desconocido")
+        logger.error(f"Error Deriv: {msg}")
+        self._trigger_callback('error', error)
+
     async def _wait_reconnect(self):
         """Esperar antes de reconectar con backoff exponencial"""
         delay = min(self._reconnect_delay, self._max_reconnect_delay)
         logger.info(f"Reconectando en {delay}s...")
         await asyncio.sleep(delay)
         self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
-    
+
     def stop(self):
         """Detener feed"""
         self.running = False
         if self._task:
             self._task.cancel()
-    
+        if self.ws:
+            asyncio.create_task(self.ws.close())
+
     def start(self):
         """Iniciar feed en background"""
         self._task = asyncio.create_task(self.run())
         return self._task
-    
-    def get_latest_candles(self, tf: str, count: int = 100) -> List[Dict]:
-        """Obtener últimas N velas de un timeframe"""
-        buffer = self.buffers.get(tf, [])
-        return buffer[-count:]
 
-
-class DerivHistoricalFeed:
-    """
-    Feed histórico desde Deriv API
-    Obtiene velas históricas mediante API
-    """
-    
-    def __init__(self, app_id: int = 1089):
-        self.app_id = app_id
-    
-    async def fetch_history(
-        self,
-        symbol: str,
-        granularity: int,
-        count: int = 1000,
-        end_time: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        Obtener historial de velas
-        
-        Args:
-            symbol: Símbolo (ej. R_100, frxEURUSD)
-            granularity: Granularidad en segundos
-            count: Número de velas (máx 5000)
-            end_time: Timestamp final
-        
-        Returns:
-            Lista de velas como diccionarios
-        """
-        import aiohttp
-        
-        params = {
-            "ticks_history": symbol,
-            "adjust_start_time": 1,
-            "count": min(count, 5000),
-            "end": end_time or int(datetime.now(timezone.utc).timestamp()),
-            "granularity": granularity,
-            "style": "candles",
-            "app_id": self.app_id
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                "https://api.deriv.com/websockets/v3",
-                params=params
-            ) as response:
-                data = await response.json()
-                
-                if 'error' in data:
-                    raise Exception(f"Error API Deriv: {data['error']}")
-                
-                candles_data = data.get('candles', [])
-                candles = []
-                
-                for c in candles_data:
-                    candle = {
-                        'timestamp': datetime.fromtimestamp(c['epoch'], tz=timezone.utc),
-                        'open': float(c['open']),
-                        'high': float(c['high']),
-                        'low': float(c['low']),
-                        'close': float(c['close']),
-                        'volume': int(c.get('volume', 0))
-                    }
-                    candles.append(candle)
-                
-                return candles
-    
-    def get_timeframe_granularity(self, tf: str) -> int:
+    @staticmethod
+    def get_granularity(tf: str) -> int:
         """Convertir timeframe a granularidad en segundos"""
         mapping = {
             'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800,
@@ -291,16 +321,17 @@ class DerivHistoricalFeed:
 def create_deriv_feed(
     symbol: str = "R_100",
     timeframes: List[str] = None,
+    api_token: Optional[str] = None,
     on_candle: Optional[Callable] = None
 ) -> DerivFeed:
     """Factory function para crear feed Deriv"""
     if timeframes is None:
         timeframes = ['M15', 'H1']
-    
-    config = DerivConfig(symbol=symbol, timeframes=timeframes)
+
+    config = DerivConfig(symbol=symbol, timeframes=timeframes, api_token=api_token)
     feed = DerivFeed(config)
-    
+
     if on_candle:
-        feed.add_callback('candle', on_candle)
-    
+        feed.add_callback('ohlc', on_candle)
+
     return feed

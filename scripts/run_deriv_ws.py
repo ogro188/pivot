@@ -28,26 +28,44 @@ async def run_deriv_feed():
     app_id = int(os.getenv("DERIV_APP_ID", "1089"))
     symbol = os.getenv("DERIV_SYMBOL", "R_100")
     timeframes = os.getenv("DERIV_TIMEFRAMES", "M15,H1").split(",")
-    ws_port = int(os.getenv("WS_PORT", "8765"))
+    api_token = os.getenv("DERIV_API_TOKEN") or None
 
-    config = DerivConfig(app_id=app_id, symbol=symbol, timeframes=timeframes)
+    if api_token:
+        logger.info("Token Deriv detectado, autenticando...")
+    else:
+        logger.warning("DERIV_API_TOKEN no configurado, operando en modo público (sin autenticar)")
+
+    config = DerivConfig(
+        app_id=app_id,
+        symbol=symbol,
+        timeframes=timeframes,
+        api_token=api_token
+    )
     feed = DerivFeed(config)
 
     # Callbacks básicos para logging
     def on_candle(tf: str, candle: dict):
-        logger.debug(f"Candle {tf}: {candle}")
+        logger.debug(f"OHLC {tf}: {candle}")
 
     def on_tick(tick: dict):
         logger.debug(f"Tick: {tick}")
 
-    def on_error(error: Exception):
-        logger.error(f"Error en DerivFeed: {error}")
+    def on_history(candles: list):
+        logger.info(f"Historial recibido: {len(candles)} velas")
 
-    def on_reconnect(attempt: int, delay: float):
-        logger.warning(f"Reconexión #{attempt} en {delay:.1f}s...")
+    def on_authorize(auth: dict):
+        logger.info(f"Autorizado: {auth.get('email', 'N/A')}")
 
-    feed.add_callback("candle", on_candle)
+    def on_error(error: dict):
+        logger.error(f"Error Deriv: {error}")
+
+    def on_reconnect():
+        logger.warning("Reconectando...")
+
+    feed.add_callback("ohlc", on_candle)
     feed.add_callback("tick", on_tick)
+    feed.add_callback("history", on_history)
+    feed.add_callback("authorize", on_authorize)
     feed.add_callback("error", on_error)
     feed.add_callback("reconnect", on_reconnect)
 
