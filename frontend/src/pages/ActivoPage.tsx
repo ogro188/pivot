@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchSignals, fetchLogs, startAsset, stopAsset, fetchHistory, fetchAssets } from '../api'
+import { fetchSignals, fetchLogs, startAsset, stopAsset, fetchHistory, fetchAssets, fetchAssetNtfy, saveAssetNtfy, testAssetNtfy } from '../api'
 import { useStore } from '../store'
 import ChartHost from '../components/ChartHost'
 import SignalCard from '../components/SignalCard'
@@ -43,9 +43,45 @@ export default function ActivoPage() {
   const assetConfig = useStore((s) => s.getAssetConfig(simbolo || ''))
   const setAssetConfig = useStore((s) => s.setAssetConfig)
 
+  const [ntfyTopic, setNtfyTopic] = useState('')
+  const [ntfyServer, setNtfyServer] = useState('https://ntfy.sh')
+  const [ntfyStatus, setNtfyStatus] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [ntfyTesting, setNtfyTesting] = useState(false)
+
+  useEffect(() => {
+    if (!simbolo) return
+    fetchAssetNtfy(simbolo).then((cfg) => {
+      setNtfyTopic(cfg.topic || '')
+      setNtfyServer(cfg.server || 'https://ntfy.sh')
+    }).catch(() => {})
+  }, [simbolo])
+
+  const handleSaveNtfy = async () => {
+    try {
+      await saveAssetNtfy(simbolo!, ntfyTopic, ntfyServer)
+      setNtfyStatus({ ok: true, msg: 'Configuración guardada' })
+    } catch {
+      setNtfyStatus({ ok: false, msg: 'Error al guardar' })
+    }
+  }
+
+  const handleTestNtfy = async () => {
+    setNtfyTesting(true)
+    setNtfyStatus(null)
+    try {
+      const res = await testAssetNtfy(simbolo!)
+      setNtfyStatus({ ok: !!res.ok, msg: res.detail || (res.ok ? 'Notificación enviada' : 'Falló') })
+    } catch {
+      setNtfyStatus({ ok: false, msg: 'Error de conexión' })
+    } finally {
+      setNtfyTesting(false)
+    }
+  }
+
   const { data: assets } = useQuery({ queryKey: ['assets'], queryFn: fetchAssets, refetchInterval: 5000 })
   const running = assets?.find((a: any) => a.simbolo === simbolo)?.running ?? false
   const asset = assets?.find((a: any) => a.simbolo === simbolo)
+  const derivConnected = useStore((s) => s.derivConnected)
 
   const { data: signals, refetch: refetchSignals } = useQuery({
     queryKey: ['signals', simbolo],
@@ -134,7 +170,15 @@ export default function ActivoPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-3">
-        <h1 className="font-mono font-semibold text-base text-text-primary">{simbolo}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="font-mono font-semibold text-base text-text-primary">{simbolo}</h1>
+          {asset?.fuente === 'deriv' && (
+            <div className={`flex items-center gap-1.5 font-condensed text-[10px] tracking-widest uppercase ${derivConnected ? 'text-brand-cyan' : 'text-text-muted'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${derivConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />
+              Deriv {derivConnected ? 'ON' : 'OFF'}
+            </div>
+          )}
+        </div>
         <div className="flex gap-2">
           <button onClick={handleStart} className={`px-3 py-1 font-condensed text-[11px] tracking-widest uppercase transition-colors ${running ? 'bg-base-panel2 border border-base-line text-text-muted cursor-default' : 'border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10'}`}>
             {running ? 'Live' : 'Start'}
@@ -256,6 +300,30 @@ export default function ActivoPage() {
               <span className="font-condensed text-[11px] text-text-secondary uppercase tracking-widest">Detectores DF</span>
               <span className="font-mono text-[11px] text-brand-cyan tabular">{detectoresActivos.length} D</span>
             </div>
+          </div>
+          <div className="panel p-2.5 space-y-1.5">
+            <div className="font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-2">Notificaciones ntfy</div>
+            <div>
+              <label className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
+              <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
+            </div>
+            <div>
+              <label className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Server</label>
+              <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} placeholder="https://ntfy.sh" />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleSaveNtfy} className="flex-1 bg-base-panel2 hover:bg-base-line text-text-secondary px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors">
+                Guardar
+              </button>
+              <button onClick={handleTestNtfy} disabled={ntfyTesting || !ntfyTopic} className={`flex-1 px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors ${ntfyTesting || !ntfyTopic ? 'bg-base-panel2 border border-base-line text-text-muted cursor-default' : 'border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10'}`}>
+                {ntfyTesting ? 'Probando…' : 'Test'}
+              </button>
+            </div>
+            {ntfyStatus && (
+              <div className={`text-[10px] font-condensed tracking-wide ${ntfyStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                {ntfyStatus.msg}
+              </div>
+            )}
           </div>
         </div>
       </div>

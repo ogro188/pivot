@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { ChartView, DrawingToolbar, IndicatorController, IndicatorPicker, createBuiltinRegistry } from '@getcandlekit/charts/react'
+import { ChartView, DrawingToolbar, IndicatorController, IndicatorPicker, createBuiltinRegistry, type ChartController } from '@getcandlekit/charts/react'
 import { createSeriesMarkers, ISeriesApi, ISeriesMarkersPluginApi, UTCTimestamp, SeriesMarker } from 'lightweight-charts'
 import { CandleDTO, SignalDTO, AssetDTO } from '../store'
 
@@ -11,8 +11,21 @@ interface ChartHostProps {
   id?: string
 }
 
+function toChartBar(c: CandleDTO) {
+  return {
+    ts: c.time * 1000,
+    open: c.open,
+    high: c.high,
+    low: c.low,
+    close: c.close,
+    volume: c.volume ?? 0,
+  }
+}
+
 export default function ChartHost({ candles, signals = [], height = 400, asset, id }: ChartHostProps) {
   const markersRef = useRef<ISeriesMarkersPluginApi<UTCTimestamp> | null>(null)
+  const controllerRef = useRef<ChartController | null>(null)
+  const idRef = useRef(id)
   const [ready, setReady] = useState(false)
   const storageKey = `drawings:${id || asset?.simbolo || 'chart'}`
 
@@ -23,18 +36,33 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
     return c
   }, [])
 
-  const data = useMemo(
-    () =>
-      candles.map((c) => ({
-        ts: c.time * 1000,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume,
-      })),
-    [candles]
+  // La vela formándose se actualiza con updateBar (sin resetear el zoom).
+  // El setData solo ocurre cuando cambian las velas cerradas (una vez por vela).
+  const forming = candles.length > 0 ? candles[candles.length - 1] : undefined
+  const closed = candles.length > 1 ? candles.slice(0, -1) : []
+  const closedKey = useMemo(
+    () => closed.map((c) => `${c.time},${c.open},${c.high},${c.low},${c.close}`).join('|'),
+    [closed]
   )
+
+  const data = useMemo(() => closed.map(toChartBar), [closedKey])
+
+  // Cambio de símbolo / timeframe: re-ajustar el rango visible.
+  useEffect(() => {
+    if (idRef.current === id) return
+    idRef.current = id
+    const ctl = controllerRef.current
+    if (ctl) {
+      requestAnimationFrame(() => ctl.getChart().timeScale().fitContent())
+    }
+  }, [id])
+
+  // Live: actualizar solo la última vela formándose sin resetear el zoom.
+  useEffect(() => {
+    const ctl = controllerRef.current
+    if (!ctl || !forming) return
+    ctl.updateBar(toChartBar(forming))
+  }, [forming])
 
   return (
     <ChartView
@@ -48,6 +76,7 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
       style={{ height, width: '100%' }}
       className="w-full rounded-sm overflow-hidden"
       onReady={({ controller }) => {
+        controllerRef.current = controller
         if (asset) {
           controller.getSeries().applyOptions({
             priceFormat: {

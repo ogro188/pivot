@@ -12,6 +12,7 @@ export default function HubPage() {
   const globalSignals = useStore((s) => s.globalSignals)
   const setAssets = useStore((s) => s.setAssets)
   const liveAssets = useStore((s) => s.assets)
+  const derivConnected = useStore((s) => s.derivConnected)
 
   useEffect(() => {
     if (assets) setAssets(assets)
@@ -40,14 +41,22 @@ export default function HubPage() {
     <div className="space-y-5">
       <div className="flex justify-between items-center">
         <h1 className="font-condensed text-[13px] tracking-widest text-text-muted uppercase">Hub</h1>
-        <button onClick={handleExport} className="border border-base-line bg-base-panel hover:bg-base-panel2 px-3 py-1 font-condensed text-[11px] tracking-widest uppercase text-text-secondary transition-colors">
-          📥 Exportar CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center gap-1.5 font-condensed text-[10px] tracking-widest uppercase ${derivConnected ? 'text-brand-cyan' : 'text-text-muted'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${derivConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />
+            Deriv {derivConnected ? 'ON' : 'OFF'}
+          </div>
+          <button onClick={handleExport} className="border border-base-line bg-base-panel hover:bg-base-panel2 px-3 py-1 font-condensed text-[11px] tracking-widest uppercase text-text-secondary transition-colors">
+            📥 Exportar CSV
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         {assets?.map((a: any) => {
           const live = liveAssets[a.simbolo]
           const price = live?.price ?? a.price
+          const isDeriv = a.fuente === 'deriv'
+          const derivOn = !!a.deriv_connected
           return (
             <Link key={a.simbolo} to={`/activo/${a.simbolo}`}>
               <div className={`panel p-2.5 transition-colors ${a.running ? 'border-brand-cyan/40' : 'hover:border-base-line'}`}>
@@ -59,7 +68,14 @@ export default function HubPage() {
                 </div>
                 <div className="font-condensed text-[11px] text-text-secondary mt-0.5">{a.nombre}</div>
                 <div className="tabular text-lg text-text-primary mt-1">{price != null ? price.toFixed(a.decimales || 5) : '—'}</div>
-                <div className="font-condensed text-[10px] text-text-muted mt-0.5 normal-case">{a.session} | {a.kill_zone}</div>
+                <div className="flex items-center gap-2 font-condensed text-[10px] text-text-muted mt-0.5 normal-case">
+                  <span>{a.session} | {a.kill_zone}</span>
+                  {isDeriv && (
+                    <span className={`px-1 border ${derivOn ? 'text-brand-cyan border-brand-cyan/40 bg-brand-cyan/10' : 'text-text-muted border-base-line'}`}>
+                      DERIV {derivOn ? 'ON' : 'OFF'}
+                    </span>
+                  )}
+                </div>
               </div>
             </Link>
           )

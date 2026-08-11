@@ -26,5 +26,10 @@ export const fetchLogs = (s: string, limit = 200) =>
 export const runBacktest = (body: BacktestRequest) => API.post('/backtest', body).then((r) => r.data)
 export const configNtfy = (topic: string, server: string) =>
   API.post('/config/ntfy', { topic, server }).then((r) => r.data)
+export const fetchAssetNtfy = (s: string) => API.get(`/assets/${s}/ntfy`).then((r) => r.data)
+export const saveAssetNtfy = (s: string, topic: string, server: string) =>
+  API.post(`/assets/${s}/ntfy`, { topic, server }).then((r) => r.data)
+export const testAssetNtfy = (s: string) =>
+  API.post(`/assets/${s}/ntfy/test`).then((r) => r.data)
 
 export default API

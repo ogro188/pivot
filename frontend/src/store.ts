@@ -16,6 +16,8 @@ export interface AssetDTO {
   decimales?: number;
   punto: number;
   tick_size: number;
+  fuente?: string;
+  deriv_connected?: boolean;
 }
 
 export interface CandleDTO {
@@ -36,6 +38,8 @@ interface AppStore {
   overlays: any[];
   backtestJobs: Record<string, any>;
   wsConnected: boolean;
+  derivConnected: boolean;
+  derivAssets: Record<string, any>;
   // Sonidos
   soundsEnabled: boolean;
   soundQueue: SignalDTO[];
@@ -48,8 +52,11 @@ interface AppStore {
   addSignal: (signal: SignalDTO) => void;
   setAssets: (assets: AssetDTO[]) => void;
   setCandles: (simbolo: string, tf: string, candles: CandleDTO[]) => void;
+  upsertCandle: (simbolo: string, tf: string, candle: CandleDTO) => void;
   addLog: (log: LogEntryDTO) => void;
   setWsConnected: (c: boolean) => void;
+  setDerivConnected: (c: boolean) => void;
+  setDerivAssets: (assets: Record<string, any>) => void;
   // Sound actions
   setSoundsEnabled: (enabled: boolean) => void;
   clearSoundQueue: () => void;
@@ -72,6 +79,8 @@ export const useStore = create<AppStore>()(
       overlays: [],
       backtestJobs: {},
       wsConnected: false,
+      derivConnected: false,
+      derivAssets: {},
       // Sonidos
       soundsEnabled: false,
       soundQueue: [],
@@ -91,9 +100,22 @@ export const useStore = create<AppStore>()(
         }),
       setCandles: (simbolo, tf, candles) =>
         set((s) => ({ candles: { ...s.candles, [`${simbolo}:${tf}`]: candles } })),
+      upsertCandle: (simbolo, tf, candle) =>
+        set((s) => {
+          const key = `${simbolo}:${tf}`
+          const existing = s.candles[key] || []
+          const idx = existing.findIndex((c) => c.time === candle.time)
+          const next =
+            idx === -1
+              ? [...existing, candle].sort((a, b) => a.time - b.time)
+              : existing.map((c, i) => (i === idx ? candle : c))
+          return { candles: { ...s.candles, [key]: next.slice(-300) } }
+        }),
       addLog: (log) =>
         set((s) => ({ consoleLogs: [log, ...s.consoleLogs].slice(0, 800) })),
       setWsConnected: (c) => set({ wsConnected: c }),
+      setDerivConnected: (c) => set({ derivConnected: c }),
+      setDerivAssets: (assets) => set({ derivAssets: assets }),
       // Sound actions
       setSoundsEnabled: (enabled) =>
         set((s) => ({ soundsEnabled: enabled, soundQueue: enabled ? [] : s.soundQueue })),

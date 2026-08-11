@@ -443,7 +443,8 @@ class PivotRadarEngine:
             bar_time = datetime(1970, 1, 1)
         ts = int(bar_time.timestamp())
         raw = f"{ts}|{detector}|{direction}|{key_level:.10f}"
-        return int(hashlib.md5(raw.encode()).hexdigest()[:16], 16)
+        # Máscara para mantener el id dentro del rango signed de SQLite INTEGER
+        return int(hashlib.md5(raw.encode()).hexdigest()[:16], 16) & 0x7FFFFFFFFFFFFFFF
 
     def is_duplicate_signal(self, sid: int) -> bool:
         return sid in self.g_pending_ids

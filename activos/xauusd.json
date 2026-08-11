@@ -1,6 +1,6 @@
 {
   "simbolo": "XAUUSD",
-  "nombre": "Oro/D\u00f3lar",
+  "nombre": "Oro/Dólar",
   "point": 0.01,
   "decimales": 2,
   "pip": 0.1,
@@ -14,5 +14,9 @@
     "H4",
     "D1"
   ],
-  "horario_broker_utc": 2
+  "horario_broker_utc": 2,
+  "ntfy": {
+    "topic": "radar_XAUUSD",
+    "server": "https://ntfy.sh"
+  }
 }

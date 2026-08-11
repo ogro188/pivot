@@ -15,6 +15,9 @@ function App() {
   const addSignal = useStore((s) => s.addSignal)
   const addLog = useStore((s) => s.addLog)
   const setAssetPrice = useStore((s) => s.setAssetPrice)
+  const upsertCandle = useStore((s) => s.upsertCandle)
+  const setDerivConnected = useStore((s) => s.setDerivConnected)
+  const setDerivAssets = useStore((s) => s.setDerivAssets)
   const soundsEnabled = useStore((s) => s.soundsEnabled)
   const soundQueue = useStore((s) => s.soundQueue)
   const clearSoundQueue = useStore((s) => s.clearSoundQueue)
@@ -120,6 +123,13 @@ function App() {
           if (msg.type === 'tick' && msg.asset && msg.price) {
             setAssetPrice(msg.asset, msg.price)
           }
+          if (msg.type === 'candle' && msg.asset && msg.data) {
+            upsertCandle(msg.asset, msg.timeframe || 'M15', msg.data)
+          }
+          if (msg.type === 'status') {
+            setDerivConnected(!!msg.deriv_connected)
+            if (msg.assets) setDerivAssets(msg.assets)
+          }
           if (msg.type === 'consola' && msg.data) {
             addLog(msg.data)
           }
@@ -144,7 +154,7 @@ function App() {
       clearTimeout(reconnectTimer)
       ws?.close()
     }
-  }, [setWsConnected, addSignal, addLog, setAssetPrice, soundsEnabled, pushNotificationsEnabled])
+  }, [setWsConnected, addSignal, addLog, setAssetPrice, upsertCandle, setDerivConnected, setDerivAssets, soundsEnabled, pushNotificationsEnabled])
 
   return (
     <div className="min-h-screen bg-base-bg text-text-primary">

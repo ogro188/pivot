@@ -5,12 +5,26 @@ import json
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+
+try:
+    from dotenv import load_dotenv
+    _ENV_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        ".env",
+    )
+    if os.path.exists(_ENV_PATH):
+        load_dotenv(_ENV_PATH)
+    else:
+        load_dotenv()
+except Exception:
+    pass
 
 # Agregar el root del workspace al path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -27,6 +41,8 @@ logger = logging.getLogger(__name__)
 _RUNNING: Dict[str, bool] = {}
 _RUNTIME_TASKS: Dict[str, asyncio.Task] = {}
 _PRICES: Dict[str, float] = {}
+_DERIV_RUNTIME: Any = None
+_DERIV_STARTED: bool = False
 
 
 def _decimales_desde_punto(punto: float) -> int:
@@ -99,6 +115,50 @@ def _serialize_senal(s) -> Dict[str, Any]:
     }
 
 
+def _df_a_velas(df, n: int) -> List[Dict[str, Any]]:
+    out = []
+    for ts, row in df.tail(n).iterrows():
+        out.append({
+            "time": int(ts.timestamp()),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+            "volume": float(row.get("volume", 0) or 0),
+        })
+    return out
+
+
+def _cargar_velas_deriv(simbolo: str, tf: str, count: int) -> Optional[List[Dict[str, Any]]]:
+    """Carga velas reales desde el buffer del runtime Deriv (si está conectado).
+
+    Incluye la vela formándose para que el chart refleje el precio en vivo.
+    Devuelve None si el activo no tiene stream Deriv activo.
+    """
+    import pandas as pd
+    from kernel.feeds.csv_resample import resamplear_ohlc
+
+    stream = _DERIV_RUNTIME.streams.get(simbolo) if _DERIV_RUNTIME else None
+    if not stream or not stream.connected:
+        return None
+
+    rows = list(stream.buffer)
+    if stream._current and (not rows or stream._current["time"] > rows[-1]["time"]):
+        rows = rows + [stream._current]
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows)
+    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+    df = df.set_index("time")
+    if tf.upper() != "M15":
+        try:
+            df = resamplear_ohlc(df, tf.upper())
+        except Exception:
+            return None
+    return _df_a_velas(df, count)
+
+
 def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
     """Carga velas OHLC para el chart. Usa el CSV del timeframe o resamplea desde M15."""
     from kernel.feeds.csv import CSVFeed
@@ -107,19 +167,6 @@ def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
     path_m15 = f"data/{simbolo.lower()}_m15.csv"
     if not os.path.exists(path_m15):
         raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
-
-    def _df_a_velas(df, n: int) -> List[Dict[str, Any]]:
-        out = []
-        for ts, row in df.tail(n).iterrows():
-            out.append({
-                "time": int(ts.timestamp()),
-                "open": float(row["open"]),
-                "high": float(row["high"]),
-                "low": float(row["low"]),
-                "close": float(row["close"]),
-                "volume": float(row.get("volume", 0) or 0),
-            })
-        return out
 
     if tf.upper() == "M15":
         feed = CSVFeed(path=path_m15, timeframe="M15", symbol=simbolo.upper())
@@ -250,12 +297,68 @@ async def _replay_asset(simbolo: str):
         _RUNNING[simbolo] = False
 
 
+async def _iniciar_deriv():
+    """Conecta los streams de Deriv para todos los activos de fuente deriv."""
+    global _DERIV_RUNTIME, _DERIV_STARTED
+    if _DERIV_STARTED:
+        return _DERIV_RUNTIME
+    _DERIV_STARTED = True
+    try:
+        from kernel.deriv_runtime import DerivRuntime
+        from kernel.activos_loader import listar_activos_disponibles, cargar_activo
+        from kernel.storage import get_database
+
+        db = get_database()
+        db.initialize()
+
+        info = {}
+        for simbolo in listar_activos_disponibles():
+            path_json = f"activos/{simbolo.lower()}.json"
+            if not os.path.exists(path_json):
+                continue
+            try:
+                with open(path_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                continue
+            if (data.get("fuente_tipo") or "").lower() != "deriv":
+                continue
+            try:
+                info[simbolo] = cargar_activo(simbolo)
+            except ValueError:
+                continue
+
+        if not info:
+            logger.info("Sin activos de fuente deriv, runtime Deriv no arranca")
+            return None
+
+        _DERIV_RUNTIME = DerivRuntime(activos_info=info, serialize_senal=_serialize_senal, db=db)
+        await _DERIV_RUNTIME.start()
+        logger.info(f"Deriv runtime iniciado para: {list(info.keys())}")
+        return _DERIV_RUNTIME
+    except Exception as e:
+        logger.error(f"Error iniciando runtime Deriv: {e}")
+        return None
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    await _iniciar_deriv()
+    yield
+    if _DERIV_RUNTIME:
+        try:
+            await _DERIV_RUNTIME.stop()
+        except Exception:
+            pass
+
+
 def create_app() -> FastAPI:
     """Crea y configura la aplicación FastAPI."""
     app = FastAPI(
         title="PIVOT Trading API",
         description="Sistema de ejecución y backtesting de estrategias de trading",
         version="2.0.0",
+        lifespan=_lifespan,
     )
 
     # Configurar CORS
@@ -292,11 +395,25 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     async def health_check():
         """Verifica el estado del sistema."""
+        deriv = None
+        if _DERIV_RUNTIME:
+            deriv = _DERIV_RUNTIME.status()
         return {
             "status": "healthy",
             "version": "2.0.0",
             "strategies_loaded": len(registro.listar()),
+            "deriv_connected": bool(deriv and deriv.get("connected")),
+            "deriv": deriv,
         }
+
+    @app.get("/api/deriv/status")
+    async def deriv_status() -> Dict[str, Any]:
+        """Estado detallado de la conexión a Deriv por activo."""
+        if not _DERIV_RUNTIME:
+            return {"connected": False, "started": False, "assets": {}}
+        status = _DERIV_RUNTIME.status()
+        status["started"] = True
+        return status
 
     @app.get("/api/assets")
     async def get_assets() -> List[Dict[str, Any]]:
@@ -326,13 +443,28 @@ def create_app() -> FastAPI:
                     extra = {}
 
             running = _RUNNING.get(activo.simbolo, False)
-            price = _PRICES.get(activo.simbolo)
-            if price is None:
+
+            # Estado de conexión Deriv del activo (si aplica)
+            deriv_stream = None
+            if _DERIV_RUNTIME:
+                deriv_stream = _DERIV_RUNTIME.streams.get(activo.simbolo)
+            deriv_connected = bool(deriv_stream and deriv_stream.connected)
+            fuente = extra.get("fuente_tipo", "csv")
+            if fuente == "deriv" and not deriv_stream:
+                fuente = "csv"  # el activo es deriv pero no hay stream activo
+
+            precio = _PRICES.get(activo.simbolo)
+            if deriv_stream and deriv_stream.price is not None:
+                price = deriv_stream.price
+            elif price is None:
                 try:
                     feed = CSVFeed(path=f"data/{simbolo.lower()}_m15.csv", timeframe="M15", symbol=activo.simbolo)
                     price = float(feed.df["close"].iloc[-1])
                 except Exception:
                     price = None
+
+            from kernel.ntfy import cargar_config_activo
+            ntfy_cfg = cargar_config_activo(activo.simbolo)
 
             resultado.append({
                 "simbolo": activo.simbolo,
@@ -342,13 +474,17 @@ def create_app() -> FastAPI:
                 "tick_size": activo.tick_size,
                 "contract_size": activo.contract_size,
                 "activo": True,
+                "fuente": fuente,
                 "running": running,
-                "connected": running,
+                "connected": deriv_connected or running,
+                "deriv_connected": deriv_connected,
                 "price": price,
                 "session": _session_actual(),
                 "kill_zone": _kill_zone_actual(),
                 "strategies_active": len(registro.listar()),
                 "signals_today": await _contar_senales_hoy(activo.simbolo),
+                "ntfy_topic": ntfy_cfg.get("topic", ""),
+                "ntfy_server": ntfy_cfg.get("server", ""),
             })
 
         return resultado
@@ -371,7 +507,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/assets/{simbolo}/history")
     async def get_asset_history(simbolo: str, tf: str = "M15", count: int = 200) -> List[Dict[str, Any]]:
-        """Obtiene velas históricas para el chart."""
+        """Obtiene velas históricas para el chart. Prioriza el stream real de Deriv."""
+        deriv = _cargar_velas_deriv(simbolo, tf, count)
+        if deriv is not None:
+            return deriv
         return _cargar_velas(simbolo, tf, count)
 
     @app.get("/api/assets/{simbolo}/signals")
@@ -456,6 +595,37 @@ def create_app() -> FastAPI:
         if task:
             task.cancel()
         return {"status": "ok", "simbolo": activo.simbolo, "running": False}
+
+    @app.get("/api/assets/{simbolo}/ntfy")
+    async def get_asset_ntfy(simbolo: str) -> Dict[str, Any]:
+        """Obtiene la configuración ntfy del activo (topic + server)."""
+        from kernel.ntfy import cargar_config_activo
+        return cargar_config_activo(simbolo)
+
+    @app.post("/api/assets/{simbolo}/ntfy")
+    async def save_asset_ntfy(simbolo: str, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Guarda la configuración ntfy del activo."""
+        from kernel.ntfy import guardar_config_activo
+        topic = request.get("topic", "")
+        server = request.get("server", "https://ntfy.sh")
+        guardar_config_activo(simbolo, topic, server)
+        # Aplicar al detector v8 del stream live si está corriendo
+        if _DERIV_RUNTIME:
+            stream = _DERIV_RUNTIME.streams.get(simbolo)
+            if stream and stream.engine:
+                stream.engine.alertas.ntfy_topic = topic
+                stream.engine.alertas.ntfy_server = server.rstrip("/")
+        return {"status": "ok", "simbolo": simbolo, "topic": topic, "server": server}
+
+    @app.post("/api/assets/{simbolo}/ntfy/test")
+    async def test_asset_ntfy(simbolo: str) -> Dict[str, Any]:
+        """Envía un mensaje de prueba ntfy para verificar la conexión."""
+        from kernel.ntfy import enviar, mensaje_prueba, cargar_config_activo
+        cfg = cargar_config_activo(simbolo)
+        if not cfg.get("topic"):
+            raise HTTPException(status_code=400, detail="No hay topic ntfy configurado para este activo")
+        ok, detalle = await asyncio.to_thread(enviar, simbolo, mensaje_prueba(simbolo), cfg)
+        return {"ok": ok, "simbolo": simbolo, "detail": detalle, "topic": cfg.get("topic"), "server": cfg.get("server")}
 
     @app.post("/api/backtest")
     async def run_backtest(request: Dict[str, Any]) -> Dict[str, Any]:

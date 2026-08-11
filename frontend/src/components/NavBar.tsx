@@ -26,6 +26,7 @@ function RadarSweep({ active }: { active: boolean }) {
 export default function NavBar() {
   const loc = useLocation()
   const wsConnected = useStore((s) => s.wsConnected)
+  const derivConnected = useStore((s) => s.derivConnected)
   const soundsEnabled = useStore((s) => s.soundsEnabled)
   const setSoundsEnabled = useStore((s) => s.setSoundsEnabled)
 
@@ -61,6 +62,12 @@ export default function NavBar() {
         <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full">
           <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-signal-long animate-pulse-dot' : 'bg-signal-short'}`} />
           <span className="font-mono text-[11px] text-text-secondary normal-case">{wsConnected ? 'LIVE' : 'OFFLINE'}</span>
+        </div>
+        <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full" title={derivConnected ? 'Conectado a Deriv API' : 'Sin conexión a Deriv API'}>
+          <div className={`w-1.5 h-1.5 rounded-full ${derivConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />
+          <span className={`font-mono text-[11px] normal-case ${derivConnected ? 'text-brand-cyan' : 'text-text-muted'}`}>
+            DERIV {derivConnected ? 'ON' : 'OFF'}
+          </span>
         </div>
       </div>
     </nav>
