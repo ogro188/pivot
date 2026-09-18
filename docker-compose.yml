@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # API Backend + Backtest Engine
   pivot-api:
@@ -13,17 +11,27 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - pivot_storage:/app/data/storage
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=sqlite:///app/data/storage/pivot.db
-      - LOG_LEVEL=INFO
-      - DERIV_APP_ID=${DERIV_APP_ID:-123456}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DERIV_APP_ID=${DERIV_APP_ID:-}
       - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
+      - MAX_POSICIONES_ABIERTAS=${MAX_POSICIONES_ABIERTAS:-5}
+      - MAX_OPERACIONES_DIA=${MAX_OPERACIONES_DIA:-20}
+      - MAX_DRAWDOWN_DIARIO=${MAX_DRAWDOWN_DIARIO:-0.05}
+      - DEFAULT_CAPITAL_INICIAL=${DEFAULT_CAPITAL_INICIAL:-10000}
+      - DEFAULT_RISK_PERCENT=${DEFAULT_RISK_PERCENT:-1.0}
+      - DEFAULT_TP_PIPS=${DEFAULT_TP_PIPS:-30}
+      - DEFAULT_SL_PIPS=${DEFAULT_SL_PIPS:-15}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/api/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
     networks:
       - pivot_network
 
@@ -39,10 +47,13 @@ services:
     volumes:
       - ./data:/app/data
       - pivot_storage:/app/data/storage
+    env_file:
+      - .env
     environment:
-      - DERIV_APP_ID=${DERIV_APP_ID:-123456}
+      - DERIV_APP_ID=${DERIV_APP_ID:-}
       - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
       - WS_PORT=8765
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     depends_on:
       - pivot-api
     restart: unless-stopped
@@ -54,21 +65,19 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8765}
     container_name: pivot-frontend
     ports:
       - "3000:80"
-    environment:
-      - VITE_API_URL=http://localhost:8000
-      - VITE_WS_URL=ws://localhost:8765
+    env_file:
+      - .env
     depends_on:
       - pivot-api
     restart: unless-stopped
     networks:
       - pivot_network
-
-  # Base de datos SQLite (volume persistente)
-  # Nota: SQLite es file-based, no necesita servicio separado
-  # El volumen se monta directamente en los servicios
 
 volumes:
   pivot_storage:

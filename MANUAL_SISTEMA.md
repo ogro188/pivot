@@ -50,7 +50,7 @@ sqlite3 (built-in)
 .venv\Scripts\python.exe -m pytest tests/integration/test_backtest.py -q
 ```
 
-**Resultado esperado**: 58 tests passed en ~80s.
+**Resultado esperado**: 50 tests passed en ~5s.
 
 ---
 
@@ -130,7 +130,7 @@ engine = BacktestEngine(
     capital_inicial=10000.0,
     riesgo_por_operacion=0.01,
     slippage_pips=1.0,
-    comision_lote=7.0
+comision_lote=0.5
 )
 
 feed = CSVFeed(tmp.name, timeframe='M15', symbol='EURUSD')

@@ -50,10 +50,11 @@ open http://localhost:3000
 | **Backtesting** | 9/10 | ✅ Engine profesional completo |
 | **Estrategias** | 9/10 | ✅ Pivot + plugins modulares |
 | **Frontend** | 9/10 | ✅ React + WebSocket |
-| **Tests** | 9/10 | ✅ >80% coverage |
-| **Docker/Deploy** | 10/10 | ✅ CI/CD completo |
-| **Documentación** | 9/10 | ✅ Completa y actualizada |
-| **Overall** | **9.2/10** | **🚀 PRODUCCIÓN** |
+| **Tests** | — | 50 unit tests passing |
+| **Docker/Deploy** | — | CI/CD configurado |
+| **Documentación** | — | En actualización continua |
+
+> **Nota**: Las métricas de "coverage >80%" y "9.2/10" eran marcadores de posición. Ver `pytest tests/unit --cov` para coverage real.
 
 ---
 
@@ -192,15 +193,45 @@ pytest tests/integration/test_backtest.py -v
 ```python
 from kernel.feeds.csv import CSVFeed
 from kernel.backtest import BacktestEngine
+from kernel.contrato import ActivoInfo
 from estrategias.pivot import EstrategiaPivot
 
-feed = CSVFeed('data/eurusd_m15.csv')
-estrategia = EstrategiaPivot(risk_percent=1.0, tp_pips=30, sl_pips=15)
-engine = BacktestEngine(feed, estrategia, capital_inicial=10000)
-resultado = engine.ejecutar()
+# 1. Configurar activo
+activo = ActivoInfo(
+    simbolo="EURUSD",
+    punto=0.00001,
+    tick_size=0.00001,
+    contract_size=100000,
+    timezone="UTC"
+)
 
-print(f"Win Rate: {resultado.win_rate*100:.1f}%")
+# 2. Cargar datos
+feed = CSVFeed('data/eurusd_m15.csv', timeframe='M15', symbol='EURUSD')
+
+# 3. Configurar estrategia (patrón setup)
+estrategia = EstrategiaPivot()
+params = {
+    "confianza_minima": 50.0,
+    "reward_ratio_min": 2.0,
+    "usar_kill_zones": True,
+    "usar_trend_d1": True,
+}
+estrategia.setup(params, activo)
+
+# 4. Ejecutar backtest
+engine = BacktestEngine(
+    estrategia=estrategia,
+    activo=activo,
+    capital_inicial=10000.0,
+    riesgo_por_operacion=0.01,
+    slippage_pips=1.0,
+    comision_lote=0.5,
+)
+resultado = engine.ejecutar(feeds={'M15': feed}, params_estrategia=params)
+
+print(f"Win Rate: {resultado.winrate:.1f}%")
 print(f"Profit Factor: {resultado.profit_factor:.2f}")
+print(f"Retorno: {resultado.retorno_total:.2f}%")
 print(f"Sharpe: {resultado.sharpe_ratio:.2f}")
 ```
 
@@ -298,6 +329,10 @@ LOG_LEVEL=INFO
 # Trading Limits
 MAX_POSICIONES_ABIERTAS=5
 MAX_DRAWDOWN_DIARIO=0.05
+
+# ActivoInfo fields (usados en código):
+# simbolo, punto, tick_size, contract_size
+# session_open, session_close, timezone
 ```
 
 ---
@@ -342,7 +377,7 @@ MAX_DRAWDOWN_DIARIO=0.05
 
 ## 📄 Licencia
 
-MIT License - ver [LICENSE](LICENSE) para detalles.
+**Propietaria / Uso interno** - No redistribuir sin autorización.
 
 ---
 
