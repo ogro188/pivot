@@ -281,7 +281,11 @@ class BacktestEngine:
             full = self._precalc.get(tf)
             if full is None or full.empty:
                 return None
-            n = full.index.searchsorted(pd.Timestamp(current_time), side="right")
+            # FIX look-ahead (borde de hora/4h/día): usar side="left" para que
+            # solo se incluyan velas YA CERRADAS (estrictamente < current_time).
+            # side="right" incluía la vela H1/H4/D1 que recién abría en el instante
+            # exacto del cambio de periodo (bug conocido, ~32% de barras afectadas).
+            n = full.index.searchsorted(pd.Timestamp(current_time), side="left")
             if n <= 0:
                 return None
             return full.iloc[max(0, n - 500):n]
@@ -324,7 +328,8 @@ class BacktestEngine:
 
         if df_d1 is not None:
             d1_emas = ema_arrays.get("D1") or {}
-            n_d1 = self._precalc["D1"].index.searchsorted(pd.Timestamp(current_time), side="right")
+            # FIX look-ahead: side="left" → solo velas D1 ya cerradas.
+            n_d1 = self._precalc["D1"].index.searchsorted(pd.Timestamp(current_time), side="left")
             for key, buf in (("ema50", g_ema50_d1_buffer), ("ema200", g_ema200_d1_buffer)):
                 arr = d1_emas.get(key)
                 if arr is not None and n_d1 > 0:
@@ -333,7 +338,8 @@ class BacktestEngine:
 
         if df_h4 is not None:
             h4_emas = ema_arrays.get("H4") or {}
-            n_h4 = self._precalc["H4"].index.searchsorted(pd.Timestamp(current_time), side="right")
+            # FIX look-ahead: side="left" → solo velas H4 ya cerradas.
+            n_h4 = self._precalc["H4"].index.searchsorted(pd.Timestamp(current_time), side="left")
             for key, buf in (("ema20", g_ema20_h4_buffer), ("ema50", g_ema50_h4_buffer)):
                 arr = h4_emas.get(key)
                 if arr is not None and n_h4 > 0:

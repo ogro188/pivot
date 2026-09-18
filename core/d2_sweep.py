@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""D2 — Liquidity Sweep + Reclaim (intravela)."""
+"""D2 — Liquidity Sweep + Reclaim (intravela). Filtros informacionales."""
 from core.estructuras import Signal
 from core.base import Contexto, Detector
 from core.utils import clamp_0_100
@@ -26,6 +26,7 @@ class DetectorD2(Detector):
         vol_found = 0.0
         level = 0.0
         equal_hl = False
+        sweep_detected = False
 
         for i in range(1, 3):
             hi = ctx._i_high(ctx.df_m15, i)
@@ -92,28 +93,20 @@ class DetectorD2(Detector):
             wick_found = wr
             vol_found = ctx.get_volume_ratio(i, ctx.inp_sweep_n)
             level = lc
+            sweep_detected = True
             break
-
-        if sweep_bar == -1 or sweep_bar > 2 or abs(close0 - level) > atr14 * 2.0:
-            return None
-
-        br_reclaim = abs(close0 - open0) / (high0 - low0) if (high0 - low0) > 0 else 0
-        reclaim_ok = (sweep_dir == 1 and close0 > open0 and close0 > level) or                      (sweep_dir == -1 and close0 < open0 and close0 < level)
-        if not reclaim_ok or br_reclaim < ctx.inp_reclaim_body_min:
-            return None
 
         sig = Signal()
         sig.entry_time = ctx._i_time(ctx.df_m15, 0)
         sig.entry_bar_shift = 0
-        sig.direction = sweep_dir
+        sig.direction = sweep_dir if sweep_detected else 0
         sig.entry_price = close0
         sig.detector = self.nombre
         sig.es_intravela = True
         sig.level_swept = level
         sig.sweep_wick_ratio = wick_found
         sig.sweep_volume_ratio = vol_found
-        sig.reclaim_body_ratio = br_reclaim
-        sig.sweep_bars_ago = sweep_bar
+        sig.sweep_bars_ago = sweep_bar if sweep_detected else 0
         sig.equal_hl_detected = equal_hl
         sig.atr14 = atr14 / ctx.point
         sig.session = ctx.session
@@ -123,11 +116,47 @@ class DetectorD2(Detector):
         sig.g2_persistencia = ctx.g2
         sig.g4_agotamiento = ctx.g4
         sig.regimen_volatilidad = ctx.regimen_vol
-        sig.tipo = self.clasificar(sig, ctx)
+
+        # Filtros informacionales
+        if not sweep_detected:
+            sig.filtros_fallados.append("sin_sweep")
+        else:
+            sig.filtros_pasados.append("sweep_detectado")
+
+        sig.filtro_wick_ratio = wick_found
+        if wick_found >= ctx.inp_sweep_wick_min:
+            sig.filtros_pasados.append("wick_ratio")
+        else:
+            sig.filtros_fallados.append("wick_ratio")
+
+        sig.filtro_sweep_reciente = sweep_bar != -1 and sweep_bar <= 2
+        if sig.filtro_sweep_reciente:
+            sig.filtros_pasados.append("sweep_reciente")
+        else:
+            sig.filtros_fallados.append("sweep_reciente")
+
+        sig.filtro_distancia_nivel = abs(close0 - level) / atr14 if atr14 > 0 else 0
+        if sig.filtro_distancia_nivel <= 2.0:
+            sig.filtros_pasados.append("distancia_nivel")
+        else:
+            sig.filtros_fallados.append("distancia_nivel")
+
+        br_reclaim = abs(close0 - open0) / (high0 - low0) if (high0 - low0) > 0 else 0
+        sig.reclaim_body_ratio = br_reclaim
+        sig.filtro_reclaim_ratio = br_reclaim
+        reclaim_ok = (sweep_dir == 1 and close0 > open0 and close0 > level) or \
+                      (sweep_dir == -1 and close0 < open0 and close0 < level)
+        if reclaim_ok and br_reclaim >= ctx.inp_reclaim_body_min:
+            sig.filtros_pasados.append("reclaim")
+        else:
+            sig.filtros_fallados.append("reclaim")
+
         # Campos observacionales
         sig.velocidad_aproximacion = self._calcular_velocidad_aproximacion(ctx, level, sweep_bar)
         sig.toques_nivel = self._contar_toques_nivel(ctx, level, sweep_dir)
         sig.displacement_post_sweep = self._detectar_displacement(ctx, sweep_bar, sweep_dir)
+
+        sig.tipo = self.clasificar(sig, ctx)
         return sig
 
     def clasificar(self, sig: Signal, ctx: Contexto) -> str:

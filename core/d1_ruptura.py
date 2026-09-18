@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""D1 — Ruptura de rango (intravela)."""
+"""D1 — Ruptura de rango (intravela). Filtros informacionales."""
 from core.estructuras import Signal
 from core.base import Contexto, Detector
 from core.utils import clamp_0_100
@@ -44,32 +44,6 @@ class DetectorD1(Detector):
             nivel_ruptura = lowest_low
             penetracion = (lowest_low - low0) / atr14
 
-        if direction == 0:
-            return None
-        if penetracion < ctx.inp_d1_atr_threshold:
-            return None
-        rango0 = high0 - low0
-        if rango0 <= 0:
-            return None
-        br0 = abs(close0 - open0) / rango0
-        if br0 < ctx.inp_body_ratio_min:
-            return None
-        if ctx.inp_d1_use_volume:
-            vol_ratio_signal = ctx.get_volume_ratio_cached(0, 20)
-            if vol_ratio_signal < ctx.inp_d1_min_volume:
-                return None
-
-        if ctx.inp_d1_use_retest:
-            retested = False
-            if direction == 1:
-                if low0 <= nivel_ruptura and close0 > nivel_ruptura:
-                    retested = True
-            else:
-                if high0 >= nivel_ruptura and close0 < nivel_ruptura:
-                    retested = True
-            if not retested:
-                return None
-
         sig = Signal()
         sig.entry_time = ctx._i_time(ctx.df_m15, 0)
         sig.entry_bar_shift = 0
@@ -77,8 +51,6 @@ class DetectorD1(Detector):
         sig.entry_price = close0
         sig.detector = self.nombre
         sig.es_intravela = True
-        sig.br = br0
-        sig.bs = penetracion
         sig.nivel_estructural = nivel_ruptura
         sig.atr14 = atr14 / ctx.point
         sig.session = ctx.session
@@ -88,6 +60,51 @@ class DetectorD1(Detector):
         sig.g2_persistencia = ctx.g2
         sig.g4_agotamiento = ctx.g4
         sig.regimen_volatilidad = ctx.regimen_vol
+
+        # Filtros informacionales
+        if direction == 0:
+            sig.filtros_fallados.append("sin_direccion")
+        else:
+            sig.filtros_pasados.append("direccion_valida")
+
+        sig.filtro_penetracion_atr = penetracion
+        if penetracion >= ctx.inp_d1_atr_threshold:
+            sig.filtros_pasados.append("penetracion_atr")
+        else:
+            sig.filtros_fallados.append("penetracion_atr")
+
+        rango0 = high0 - low0
+        br0 = abs(close0 - open0) / rango0 if rango0 > 0 else 0
+        sig.br = br0
+        sig.bs = penetracion
+        sig.filtro_body_ratio = br0
+        if br0 >= ctx.inp_body_ratio_min:
+            sig.filtros_pasados.append("body_ratio")
+        else:
+            sig.filtros_fallados.append("body_ratio")
+
+        if ctx.inp_d1_use_volume:
+            vol_ratio_signal = ctx.get_volume_ratio_cached(0, 20)
+            sig.filtro_volumen_ratio = vol_ratio_signal
+            if vol_ratio_signal >= ctx.inp_d1_min_volume:
+                sig.filtros_pasados.append("volumen")
+            else:
+                sig.filtros_fallados.append("volumen")
+
+        if ctx.inp_d1_use_retest:
+            retested = False
+            if direction == 1:
+                if low0 <= nivel_ruptura and close0 > nivel_ruptura:
+                    retested = True
+            else:
+                if high0 >= nivel_ruptura and close0 < nivel_ruptura:
+                    retested = True
+            sig.filtro_retest = retested
+            if retested:
+                sig.filtros_pasados.append("retest")
+            else:
+                sig.filtros_fallados.append("retest")
+
         sig.tipo = self.clasificar(sig, ctx)
         return sig
 

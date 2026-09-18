@@ -109,6 +109,29 @@ class Signal:
     objetivo_estructural: float = 0.0
     csv_written: bool = False
 
+    # Filtros informacionales (no bloqueantes)
+    filtros_pasados: List[str] = field(default_factory=list)
+    filtros_fallados: List[str] = field(default_factory=list)
+    filtro_penetracion_atr: float = 0.0
+    filtro_body_ratio: float = 0.0
+    filtro_volumen_ratio: float = 0.0
+    filtro_retest: bool = False
+    filtro_wick_ratio: float = 0.0
+    filtro_reclaim_ratio: float = 0.0
+    filtro_sweep_reciente: bool = False
+    filtro_distancia_nivel: float = 0.0
+    filtro_fvg_size_atr: float = 0.0
+    filtro_fvg_body_ratio: float = 0.0
+    filtro_fvg_dir_ok: bool = False
+    filtro_ob_impulse: float = 0.0
+    filtro_ob_body_ratio: float = 0.0
+    filtro_ob_tested: bool = False
+    filtro_ob_entering: bool = False
+    filtro_ob_distancia: float = 0.0
+    filtro_mss_aligned: bool = False
+    filtro_mss_reciente: bool = False
+    filtro_confluencias: int = 0
+
 
 @dataclass
 class AlertEntry:

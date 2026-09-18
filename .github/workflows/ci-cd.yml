@@ -90,7 +90,7 @@ jobs:
       
       - name: Run integration tests
         run: |
-          pytest tests/integration -v --tb=short || true
+          pytest tests/integration -v --tb=short
       
       - name: Run backtest example
         run: |

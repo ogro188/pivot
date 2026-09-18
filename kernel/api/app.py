@@ -160,16 +160,24 @@ def _cargar_velas_deriv(simbolo: str, tf: str, count: int) -> Optional[List[Dict
 
 
 def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
-    """Carga velas OHLC para el chart. Usa el CSV del timeframe o resamplea desde M15."""
+    """Carga velas OHLC para el chart. Usa el CSV del timeframe o resamplea desde M15.
+    
+    Prioriza datos reales (eurusd_m15_real.csv) sobre el CSV de prueba sintético
+    para que los gráficos muestren datos actuales y alineados con la hora real.
+    """
     from kernel.feeds.csv import CSVFeed
     from kernel.feeds.csv_resample import resamplear_ohlc
 
+    # Preferir datos reales sobre el CSV de prueba sintético
+    path_real = f"data/{simbolo.lower()}_m15_real.csv"
     path_m15 = f"data/{simbolo.lower()}_m15.csv"
-    if not os.path.exists(path_m15):
-        raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
-
+    
     if tf.upper() == "M15":
-        feed = CSVFeed(path=path_m15, timeframe="M15", symbol=simbolo.upper())
+        # Usar datos reales si existen, sino el CSV de prueba
+        path = path_real if os.path.exists(path_real) else path_m15
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
+        feed = CSVFeed(path=path, timeframe="M15", symbol=simbolo.upper())
         return _df_a_velas(feed.df, count)
 
     path_tf = f"data/{simbolo.lower()}_{tf.lower()}.csv"
@@ -177,7 +185,12 @@ def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
         feed = CSVFeed(path=path_tf, timeframe=tf.upper(), symbol=simbolo.upper())
         return _df_a_velas(feed.df, count)
 
-    feed_m15 = CSVFeed(path=path_m15, timeframe="M15", symbol=simbolo.upper())
+    # Resamplear desde M15 (usando datos reales si existen)
+    path_m15_real = path_real if os.path.exists(path_real) else path_m15
+    if not os.path.exists(path_m15_real):
+        raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
+    
+    feed_m15 = CSVFeed(path=path_m15_real, timeframe="M15", symbol=simbolo.upper())
     df = resamplear_ohlc(feed_m15.df, tf.upper())
     return _df_a_velas(df, count)
 
@@ -223,7 +236,11 @@ async def _replay_asset(simbolo: str):
 
     try:
         activo = cargar_activo(simbolo)
-        feed = CSVFeed(path=f"data/{simbolo.lower()}_m15.csv", timeframe="M15", symbol=activo.simbolo)
+        # Preferir datos reales sobre el CSV de prueba sintético
+        path_real = f"data/{simbolo.lower()}_m15_real.csv"
+        path_m15 = f"data/{simbolo.lower()}_m15.csv"
+        path_csv = path_real if os.path.exists(path_real) else path_m15
+        feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)
 
         señales = []
         try:
@@ -457,8 +474,12 @@ def create_app() -> FastAPI:
             if deriv_stream and deriv_stream.price is not None:
                 price = deriv_stream.price
             elif price is None:
+                # Preferir datos reales sobre el CSV de prueba sintético
+                path_real = f"data/{simbolo.lower()}_m15_real.csv"
+                path_m15 = f"data/{simbolo.lower()}_m15.csv"
+                path_csv = path_real if os.path.exists(path_real) else path_m15
                 try:
-                    feed = CSVFeed(path=f"data/{simbolo.lower()}_m15.csv", timeframe="M15", symbol=activo.simbolo)
+                    feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)
                     price = float(feed.df["close"].iloc[-1])
                 except Exception:
                     price = None

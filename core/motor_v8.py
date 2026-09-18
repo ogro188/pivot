@@ -669,6 +669,9 @@ class PivotRadarEngine:
             sig = det.detectar(ctx)
             if sig is None:
                 continue
+            # Filtrar señales sin dirección válida (filtros informacionales fallidos)
+            if sig.direction == 0:
+                continue
             # Determinar key_level para deduplicación
             key_level = sig.nivel_estructural or sig.level_swept or sig.fvg_top or sig.ob_high or sig.entry_price
             sid = self.build_signal_id(sig.entry_time, det.nombre, sig.direction, key_level)

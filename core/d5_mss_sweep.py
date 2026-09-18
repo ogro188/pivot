@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""D5 — Market Structure Shift H4 + Sweep (intravela)."""
+"""D5 — Market Structure Shift H4 + Sweep (intravela). Filtros informacionales."""
 from core.estructuras import Signal
 from core.base import Contexto, Detector
 
@@ -10,8 +10,6 @@ class DetectorD5(Detector):
 
     def detectar(self, ctx: Contexto) -> Signal:
         ok_mss, mss_bars, mss_dir, mss_level = ctx.detect_mss_h4()
-        if not ok_mss or mss_bars > ctx.inp_mss_max_age_h4_bars:
-            return None
         mss_dir_int = 1 if mss_dir == "ALCISTA" else -1
 
         close0 = ctx._i_close(ctx.df_m15, 0)
@@ -24,9 +22,42 @@ class DetectorD5(Detector):
         if atr14 <= 0:
             return None
 
+        sig = Signal()
+        sig.entry_time = ctx._i_time(ctx.df_m15, 0)
+        sig.entry_bar_shift = 0
+        sig.entry_price = close0
+        sig.detector = self.nombre
+        sig.es_intravela = True
+        sig.atr14 = atr14 / ctx.point
+        sig.session = ctx.session
+        sig.kill_zone = ctx.kill_zone
+        sig.estructura_direccion = ctx.estructura.dir_estructura if ctx.estructura else "NEUTRO"
+        sig.g1_compresion = ctx.g1
+        sig.g2_persistencia = ctx.g2
+        sig.g4_agotamiento = ctx.g4
+        sig.regimen_volatilidad = ctx.regimen_vol
+
+        if not ok_mss or mss_bars > ctx.inp_mss_max_age_h4_bars:
+            sig.direction = 0
+            sig.filtros_fallados.append("sin_mss")
+            sig.tipo = "D"
+            return sig
+
+        sig.mss_aligned = True
+        sig.mss_direction = mss_dir
+        sig.mss_bars_ago_h4 = mss_bars
+        sig.mss_level = mss_level
+        sig.filtro_mss_aligned = True
+        sig.filtro_mss_reciente = mss_bars <= ctx.inp_mss_max_age_h4_bars
+        if sig.filtro_mss_reciente:
+            sig.filtros_pasados.append("mss_reciente")
+        else:
+            sig.filtros_fallados.append("mss_reciente")
+
         sweep_bar = -1
         wick_found = 0.0
         level = 0.0
+        sweep_detected = False
 
         for i in range(1, 3):
             hi = ctx._i_high(ctx.df_m15, i)
@@ -63,6 +94,7 @@ class DetectorD5(Detector):
                 sweep_bar = i
                 wick_found = w
                 level = pl
+                sweep_detected = True
                 break
             else:
                 if not (hi > ph and ci < ph):
@@ -73,43 +105,52 @@ class DetectorD5(Detector):
                 sweep_bar = i
                 wick_found = w
                 level = ph
+                sweep_detected = True
                 break
 
-        if sweep_bar == -1 or sweep_bar > 2 or abs(close0 - level) > atr14 * 2.0:
-            return None
+        if not sweep_detected or sweep_bar > 2 or abs(close0 - level) > atr14 * 2.0:
+            sig.direction = 0
+            sig.filtros_fallados.append("sin_sweep_valido")
+            sig.tipo = "D"
+            return sig
 
-        br_reclaim = abs(close0 - open0) / (high0 - low0) if (high0 - low0) > 0 else 0
-        reclaim_ok = (mss_dir_int == 1 and close0 > open0 and close0 > level) or                      (mss_dir_int == -1 and close0 < open0 and close0 < level)
-        if not reclaim_ok or br_reclaim < ctx.inp_reclaim_body_min:
-            return None
-
-        sig = Signal()
-        sig.entry_time = ctx._i_time(ctx.df_m15, 0)
-        sig.entry_bar_shift = 0
         sig.direction = mss_dir_int
-        sig.entry_price = close0
-        sig.detector = self.nombre
-        sig.es_intravela = True
-        sig.mss_aligned = True
-        sig.mss_direction = mss_dir
-        sig.mss_bars_ago_h4 = mss_bars
-        sig.mss_level = mss_level
         sig.level_swept = level
         sig.sweep_wick_ratio = wick_found
+        sig.filtro_wick_ratio = wick_found
+        if wick_found >= ctx.inp_sweep_wick_min:
+            sig.filtros_pasados.append("wick_ratio")
+        else:
+            sig.filtros_fallados.append("wick_ratio")
+
+        sig.filtro_sweep_reciente = sweep_bar != -1 and sweep_bar <= 2
+        if sig.filtro_sweep_reciente:
+            sig.filtros_pasados.append("sweep_reciente")
+        else:
+            sig.filtros_fallados.append("sweep_reciente")
+
+        sig.filtro_distancia_nivel = abs(close0 - level) / atr14 if atr14 > 0 else 0
+        if sig.filtro_distancia_nivel <= 2.0:
+            sig.filtros_pasados.append("distancia_nivel")
+        else:
+            sig.filtros_fallados.append("distancia_nivel")
+
+        br_reclaim = abs(close0 - open0) / (high0 - low0) if (high0 - low0) > 0 else 0
         sig.reclaim_body_ratio = br_reclaim
-        sig.atr14 = atr14 / ctx.point
-        sig.session = ctx.session
-        sig.kill_zone = ctx.kill_zone
-        sig.estructura_direccion = ctx.estructura.dir_estructura if ctx.estructura else "NEUTRO"
-        sig.g1_compresion = ctx.g1
-        sig.g2_persistencia = ctx.g2
-        sig.g4_agotamiento = ctx.g4
-        sig.regimen_volatilidad = ctx.regimen_vol
-        sig.tipo = self.clasificar(sig, ctx, mss_bars, wick_found, br_reclaim)
+        sig.filtro_reclaim_ratio = br_reclaim
+        reclaim_ok = (mss_dir_int == 1 and close0 > open0 and close0 > level) or \
+                      (mss_dir_int == -1 and close0 < open0 and close0 < level)
+        if reclaim_ok and br_reclaim >= ctx.inp_reclaim_body_min:
+            sig.filtros_pasados.append("reclaim")
+        else:
+            sig.filtros_fallados.append("reclaim")
+
         # Campos observacionales
         sig.velocidad_aproximacion = self._calcular_velocidad_aproximacion(ctx, level, sweep_bar)
         sig.toques_nivel = self._contar_toques_nivel(ctx, level, mss_dir_int)
         sig.displacement_post_sweep = self._detectar_displacement(ctx, sweep_bar, mss_dir_int)
+
+        sig.tipo = self.clasificar(sig, ctx, mss_bars, wick_found, br_reclaim)
         return sig
 
     def clasificar(self, sig: Signal, ctx: Contexto, mss_bars: int = None, wick: float = None, reclaim: float = None) -> str:

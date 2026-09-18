@@ -219,7 +219,8 @@ class EstrategiaPivot(Estrategia):
         from estrategias.pivot.scoring import WilsonScorer
         self.scorer = WilsonScorer(
             z_score=params.get("z_score", 1.96),
-            min_muestras=params.get("min_muestras", 30)
+            min_muestras=params.get("min_muestras", 5),  # REDUCIDO: 5 para modo binary rápido
+            modo=params.get("modo", "binary")  # "standard" o "binary"
         )
         self._cargar_historial_scoring()
 

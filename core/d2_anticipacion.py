@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""D2_ANTICIPACION — Alerta temprana de sweep con confluencias."""
+"""D2_ANTICIPACION — Alerta temprana de sweep con confluencias. Filtros informacionales."""
 from core.estructuras import Signal
 from core.base import Contexto, Detector
 from core.utils import clamp_0_100
@@ -34,18 +34,41 @@ class DetectorD2Anticipacion(Detector):
 
         sweep_high = high0 > prior_high
         sweep_low = low0 < prior_low
+
+        sig = Signal()
+        sig.entry_time = ctx._i_time(ctx.df_m15, 0)
+        sig.entry_bar_shift = 0
+        sig.entry_price = close0
+        sig.detector = self.nombre
+        sig.es_intravela = True
+        sig.atr14 = atr14 / ctx.point
+        sig.session = ctx.session
+        sig.kill_zone = ctx.kill_zone
+        sig.estructura_direccion = ctx.estructura.dir_estructura if ctx.estructura else "NEUTRO"
+        sig.g1_compresion = ctx.g1
+        sig.g2_persistencia = ctx.g2
+        sig.g4_agotamiento = ctx.g4
+        sig.regimen_volatilidad = ctx.regimen_vol
+
         if not sweep_high and not sweep_low:
-            return None
+            sig.direction = 0
+            sig.filtros_fallados.append("sin_sweep")
+            sig.tipo = "D"
+            return sig
 
         sweep_dir = -1 if sweep_high else 1
         nivel_barrido = prior_high if sweep_high else prior_low
+        sig.direction = sweep_dir
+        sig.level_swept = nivel_barrido
 
         rango = high0 - low0
-        if rango <= 0:
-            return None
         wick_ratio = (high0 - max(open0, close0)) / rango if sweep_high else (min(open0, close0) - low0) / rango
-        if wick_ratio < ctx.inp_sweep_wick_min * 0.6:
-            return None
+        sig.sweep_wick_ratio = wick_ratio
+        sig.filtro_wick_ratio = wick_ratio
+        if wick_ratio >= ctx.inp_sweep_wick_min * 0.6:
+            sig.filtros_pasados.append("wick_ratio")
+        else:
+            sig.filtros_fallados.append("wick_ratio")
 
         confluencias = 0
         hay_fvg = False
@@ -74,6 +97,9 @@ class DetectorD2Anticipacion(Detector):
 
         if hay_fvg:
             confluencias += 1
+            sig.filtros_pasados.append("confluencia_fvg")
+        else:
+            sig.filtros_fallados.append("confluencia_fvg")
 
         hay_ob = False
         for i in range(2, 5):
@@ -95,6 +121,9 @@ class DetectorD2Anticipacion(Detector):
                 break
         if hay_ob:
             confluencias += 1
+            sig.filtros_pasados.append("confluencia_ob")
+        else:
+            sig.filtros_fallados.append("confluencia_ob")
 
         hay_mss = False
         ok_mss, mss_bars, mss_dir, mss_level = ctx.detect_mss_h4()
@@ -103,33 +132,22 @@ class DetectorD2Anticipacion(Detector):
             if md == sweep_dir:
                 hay_mss = True
                 confluencias += 1
+                sig.filtros_pasados.append("confluencia_mss")
+            else:
+                sig.filtros_fallados.append("confluencia_mss")
+        else:
+            sig.filtros_fallados.append("confluencia_mss")
 
-        if confluencias >= 2:
-            sig = Signal()
-            sig.entry_time = ctx._i_time(ctx.df_m15, 0)
-            sig.entry_bar_shift = 0
-            sig.direction = sweep_dir
-            sig.entry_price = close0
-            sig.detector = self.nombre
-            sig.es_intravela = True
-            sig.level_swept = nivel_barrido
-            sig.sweep_wick_ratio = wick_ratio
-            sig.sweep_volume_ratio = ctx.get_volume_ratio_cached(0, max(ctx.inp_n_ruptura, ctx.inp_sweep_n, ctx.inp_ob_lookback, 10))
-            sig.atr14 = atr14 / ctx.point
-            sig.session = ctx.session
-            sig.kill_zone = ctx.kill_zone
-            sig.estructura_direccion = ctx.estructura.dir_estructura if ctx.estructura else "NEUTRO"
-            sig.g1_compresion = ctx.g1
-            sig.g2_persistencia = ctx.g2
-            sig.g4_agotamiento = ctx.g4
-            sig.regimen_volatilidad = ctx.regimen_vol
-            sig._confluencias = confluencias
-            sig.tipo = self.clasificar(sig, ctx)
-            # Campos observacionales estimados
-            sig.velocidad_aproximacion = 50.0
-            sig.toques_nivel = self._contar_toques_nivel(ctx, nivel_barrido, sweep_dir)
-            return sig
-        return None
+        sig.filtro_confluencias = confluencias
+        sig._confluencias = confluencias
+        sig.sweep_volume_ratio = ctx.get_volume_ratio_cached(0, max(ctx.inp_n_ruptura, ctx.inp_sweep_n, ctx.inp_ob_lookback, 10))
+
+        # Campos observacionales estimados
+        sig.velocidad_aproximacion = 50.0
+        sig.toques_nivel = self._contar_toques_nivel(ctx, nivel_barrido, sweep_dir)
+
+        sig.tipo = self.clasificar(sig, ctx)
+        return sig
 
     def clasificar(self, sig: Signal, ctx: Contexto) -> str:
         wick = sig.sweep_wick_ratio

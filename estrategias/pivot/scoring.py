@@ -38,9 +38,10 @@ class WilsonScorer:
     Esto penaliza combinaciones con pocas operaciones, evitando sobreestimación.
     """
     
-    def __init__(self, z_score: float = 1.96, min_muestras: int = 30):
+    def __init__(self, z_score: float = 1.96, min_muestras: int = 30, modo: str = "standard"):
         self.z_score = z_score  # 95% confidence
         self.min_muestras = min_muestras
+        self.modo = modo  # "standard" o "binary"
         
         # Historial por combinación de detectores + dirección
         # Key: hash("D1,D2,D5_LONG")
