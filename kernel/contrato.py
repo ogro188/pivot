@@ -505,6 +505,193 @@ class Estrategia(ABC):
 # EXPORTACIONES PÚBLICAS
 # =============================================================================
 
+# =============================================================================
+# TIPOS PARA OPCIONES BINARIAS
+# =============================================================================
+
+@dataclass
+class BinarySeñal(Señal):
+    """
+    Señal para opciones binarias.
+    Hereda de Señal y añade campos específicos de binarias.
+    No usa stop_loss, take_profit, expiracion_velas (se ignoran).
+    """
+    # Expiración temporal exacta (en minutos desde entrada)
+    expiry_minutes: int = 15
+    expiry_timestamp: Optional[datetime] = None
+    
+    # Payout y contrato
+    payout_pct: float = 0.80  # 70-95% típico
+    contract_amount: float = 10.0  # USD por contrato
+    contract_count: int = 1  # Número de contratos (para escalado)
+    
+    # Tipo de opción
+    option_type: str = "CALL"  # "CALL" (direccion=1) o "PUT" (direccion=-1)
+    
+    def __post_init__(self):
+        # Llamar __post_init__ de padre para generar id_señal
+        super().__post_init__()
+        
+        # Mapear dirección a tipo de opción
+        if self.direccion == 1:
+            self.option_type = "CALL"
+        elif self.direccion == -1:
+            self.option_type = "PUT"
+        
+        # Calcular expiry_timestamp si no viene
+        if self.expiry_timestamp is None and self.tiempo:
+            self.expiry_timestamp = self.tiempo + timedelta(minutes=self.expiry_minutes)
+
+
+@dataclass
+class BinaryActivoInfo(ActivoInfo):
+    """
+    Información de activo para opciones binarias.
+    Extiende ActivoInfo con tabla de payouts y límites de contrato.
+    """
+    # Tabla de payouts por horizonte temporal (minutos -> payout decimal)
+    # Ej: {"1": 0.75, "5": 0.80, "15": 0.82, "30": 0.83, "60": 0.85, "EOD": 0.88}
+    payout_table: Dict[str, float] = field(default_factory=dict)
+    
+    # Límites de contrato
+    min_contract: float = 1.0
+    max_contract: float = 10000.0
+    min_contracts_per_trade: int = 1
+    max_contracts_per_trade: int = 100
+    
+    # Broker específico (para payouts específicos)
+    broker: str = "generic"  # "deriv", "iqoption", "pocket", "generic"
+    
+    def get_payout(self, expiry_minutes: int) -> float:
+        """Obtiene payout para un horizonte dado, con fallback."""
+        key = str(expiry_minutes)
+        if key in self.payout_table:
+            return self.payout_table[key]
+        # Fallback: buscar el más cercano >= expiry_minutes
+        candidates = []
+        for k, v in self.payout_table.items():
+            if k.isdigit() and int(k) >= expiry_minutes:
+                candidates.append((int(k), v))
+        if candidates:
+            # Retornar el más cercano (mínimo key >= expiry_minutes)
+            return min(candidates, key=lambda x: x[0])[1]
+        # Si no hay >=, retornar el máximo disponible (EOD o el mayor)
+        if self.payout_table:
+            return max(self.payout_table.values())
+        return 0.80  # Default
+
+
+class BinaryRiskMode:
+    """Modos de gestión de riesgo para binarias."""
+    FIXED = "fixed"           # Monto fijo por operación
+    MARTINGALE = "martingale" # Doblar tras pérdida
+    ANTI_MARTINGALE = "anti_martingale"  # Aumentar tras ganancia
+    KELLY = "kelly"           # Kelly fraccional basado en winrate histórico
+    PERCENTAGE = "percentage" # % del capital actual
+
+
+@dataclass
+class BinaryRiskConfig:
+    """Configuración de riesgo para binarias."""
+    mode: str = BinaryRiskMode.FIXED
+    
+    # Fixed
+    fixed_amount: float = 10.0
+    
+    # Martingala
+    martingale_multiplier: float = 2.0
+    martingale_max_steps: int = 4
+    martingale_reset_on_win: bool = True
+    
+    # Anti-martingala
+    anti_martingale_multiplier: float = 1.5
+    anti_martingale_max_steps: int = 3
+    
+    # Kelly
+    kelly_fraction: float = 0.25  # 25% de Kelly óptimo
+    kelly_min_winrate: float = 0.55
+    kelly_min_payout: float = 0.70
+    
+    # Percentage
+    percentage_of_capital: float = 0.02  # 2%
+    
+    # Límites globales
+    max_daily_loss_pct: float = 0.05  # 5% pérdida diaria máxima
+    max_daily_trades: int = 20
+    max_concurrent_trades: int = 1
+    max_total_exposure_pct: float = 0.10  # 10% capital en riesgo simultáneo
+
+
+@dataclass
+class BinaryResultado:
+    """Resultados de backtest binario."""
+    # Configuración
+    estrategia: str = ""
+    simbolo: str = ""
+    periodo_inicio: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    periodo_fin: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    timeframe_principal: str = "M15"
+    
+    # Capital
+    capital_inicial: float = 0.0
+    capital_final: float = 0.0
+    
+    # Métricas principales
+    total_contratos: int = 0
+    contratos_ganadores: int = 0
+    contratos_perdedores: int = 0
+    winrate: float = 0.0
+    profit_factor: float = 0.0
+    roi_pct: float = 0.0  # (ganancia_neta / total_invertido) * 100
+    retorno_total_pct: float = 0.0  # (capital_final - capital_inicial) / capital_inicial * 100
+    
+    # Riesgo
+    max_drawdown_pct: float = 0.0
+    max_drawdown_abs: float = 0.0
+    racha_ganadora_max: int = 0
+    racha_perdedora_max: int = 0
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    
+    # Específicos binarias
+    total_invertido: float = 0.0
+    total_ganado: float = 0.0
+    total_perdido: float = 0.0
+    payout_promedio: float = 0.0
+    
+    # Detalles
+    operaciones: List[Any] = field(default_factory=list)
+    equity_curve: List[Tuple[datetime, float]] = field(default_factory=list)
+    metrics_extra: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "estrategia": self.estrategia,
+            "simbolo": self.simbolo,
+            "periodo_inicio": self.periodo_inicio.isoformat() if self.periodo_inicio else "",
+            "periodo_fin": self.periodo_fin.isoformat() if self.periodo_fin else "",
+            "timeframe_principal": self.timeframe_principal,
+            "total_contratos": self.total_contratos,
+            "contratos_ganadores": self.contratos_ganadores,
+            "contratos_perdedores": self.contratos_perdedores,
+            "winrate": round(self.winrate, 2),
+            "profit_factor": round(self.profit_factor, 2),
+            "roi_pct": round(self.roi_pct, 2),
+            "retorno_total_pct": round(self.retorno_total_pct, 2),
+            "max_drawdown_pct": round(self.max_drawdown_pct, 2),
+            "sharpe_ratio": round(self.sharpe_ratio, 2),
+            "sortino_ratio": round(self.sortino_ratio, 2),
+            "racha_ganadora_max": self.racha_ganadora_max,
+            "racha_perdedora_max": self.racha_perdedora_max,
+            "total_invertido": round(self.total_invertido, 2),
+            "total_ganado": round(self.total_ganado, 2),
+            "total_perdido": round(self.total_perdido, 2),
+            "payout_promedio": round(self.payout_promedio, 4),
+            "metrics_extra": self.metrics_extra,
+        }
+
+
+# Actualizar exports
 __all__ = [
     "Estrategia",
     "Contexto",
@@ -512,5 +699,11 @@ __all__ = [
     "ActivoInfo",
     "Metrica",
     "Overlay",
-    "IndicadorCache"
+    "IndicadorCache",
+    # Binarios
+    "BinarySeñal",
+    "BinaryActivoInfo",
+    "BinaryRiskMode",
+    "BinaryRiskConfig",
+    "BinaryResultado",
 ]
