@@ -1,0 +1,23 @@
+{
+  "estrategia": "PIVOT_BINARIA",
+  "simbolo": "EURUSD",
+  "periodo_inicio": "2024-01-01T02:15:00+00:00",
+  "periodo_fin": "2024-01-03T01:30:00+00:00",
+  "timeframe_principal": "M15",
+  "total_operaciones": 0,
+  "operaciones_ganadoras": 0,
+  "operaciones_perdedoras": 0,
+  "operaciones_empate": 0,
+  "winrate": 0.0,
+  "retorno_total": 0.0,
+  "retorno_promedio": 0.0,
+  "profit_factor": 0.0,
+  "expectativa_matematica": 0.0,
+  "drawdown_maximo": 0.0,
+  "racha_ganadora_max": 0,
+  "racha_perdedora_max": 0,
+  "sharpe_ratio": 0.0,
+  "estadisticas_por_detector": {},
+  "estadisticas_por_expiracion": {},
+  "estadisticas_por_sesion": {}
+}
