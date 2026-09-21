@@ -49,7 +49,7 @@ export default function NavBar() {
     <nav className="bg-base-panel hairline-b px-3 h-11 flex items-center gap-1 font-condensed text-[13px] tracking-wide uppercase">
       <div className="flex items-center gap-2 pr-3 mr-2 border-r border-base-line h-full">
         <RadarSweep active={wsConnected} />
-        <span className="font-mono font-semibold text-text-primary tracking-tight normal-case text-sm">PV TERMINAL</span>
+        <span className="font-mono font-semibold text-text-primary tracking-tight normal-case text-sm">PIVOT</span>
       </div>
       {links.map((l) => (
         <Link

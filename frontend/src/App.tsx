@@ -87,7 +87,7 @@ function App() {
     if (!pushNotificationsEnabled || !isHighConfidence(signal)) return
     if (Notification.permission !== 'granted') return
     try {
-      new Notification(`PV TERMINAL - ${signal.asset} ${signal.direccion === 1 ? 'LONG' : 'SHORT'}`, {
+      new Notification(`PIVOT — ${signal.asset} ${signal.direccion === 1 ? 'LONG' : 'SHORT'}`, {
         body: `Confianza ${signal.confianza?.[0]}% @ ${signal.precio?.toFixed(5)}`,
         icon: '/pivot-icon.png',
         tag: `signal-${signal.id}`,
