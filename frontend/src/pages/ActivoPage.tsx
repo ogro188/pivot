@@ -320,7 +320,7 @@ export default function ActivoPage() {
               </button>
             </div>
             {ntfyStatus && (
-              <div className={`text-[10px] font-condensed tracking-wide ${ntfyStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+              <div className={`text-[10px] font-condensed tracking-wide ${ntfyStatus.ok ? 'text-brand-cyan' : 'text-red-400'}`}>
                 {ntfyStatus.msg}
               </div>
             )}

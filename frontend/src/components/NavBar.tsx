@@ -60,7 +60,7 @@ export default function NavBar() {
           {soundsEnabled ? '♪' : '✕'}
         </button>
         <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full">
-          <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-signal-long animate-pulse-dot' : 'bg-signal-short'}`} />
+          <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />
           <span className="font-mono text-[11px] text-text-secondary normal-case">{wsConnected ? 'LIVE' : 'OFFLINE'}</span>
         </div>
         <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full" title={derivConnected ? 'Conectado a Deriv API' : 'Sin conexión a Deriv API'}>

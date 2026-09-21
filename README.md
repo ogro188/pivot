@@ -259,16 +259,14 @@ pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 
 | Component | Issue | Severity |
 |-----------|-------|----------|
-| `kernel/backtest.py:_slice_tf()` | Look-ahead at exact hour/4h/day boundary (`side="right"` includes opening candle). Fix: `side="left"`. | Medium |
-| CI workflow | `pytest tests/integration \|\| true` masks integration failures. | Low |
-| Test organization | `test_pivot_backtest.py` in root, not under `tests/`. | Low |
+| `test_pivot_backtest.py` in root | Orphaned script; imports nonexistent `generar_datos_prueba`. | Low |
 | Loose files | `especificacion_pivotradar_v8_sin_restricciones.md` should move to `docs/`. | Low |
 
 ---
 
 ## Design Rules (Non-Negotiable)
 
-1. **Zero Look-ahead**: `df_h1.index.max() < tiempo_actual` (strict) for all higher TFs
+1. **Zero Look-ahead**: `_slice_tf()` uses `searchsorted(side="left")` for all higher TFs — only closed candles included
 2. **Tests Require Assertions**: No "no exception" tests; explicit outcome assertions
 3. **Metrics Require Commands**: No undocumented numbers in docs
 4. **Radar Pure**: Only D0–D5 detectors gate signals; session/spread/vol adjust confidence, never block

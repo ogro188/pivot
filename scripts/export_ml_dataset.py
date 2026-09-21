@@ -3,9 +3,9 @@
 Script para exportar dataset de ML desde la base de datos SQLite.
 
 Uso:
-    python scripts/export_ml_dataset.py [--output salida.csv] [--format csv|parquet]
+    python scripts/export_ml_dataset.py [--symbol EURUSD] [--output salida.csv] [--format csv|parquet]
 
-Exporta todas las señales históricas con sus resultados para entrenamiento de modelos.
+Exporta todas las señales historicas con sus resultados para entrenamiento de modelos.
 """
 
 import argparse
@@ -19,13 +19,14 @@ from kernel.storage import Database
 import pandas as pd
 
 
-def export_ml_dataset(output_path: str = "ml_dataset.csv", format: str = "csv"):
+def export_ml_dataset(symbol: str = "EURUSD", output_path: str = "ml_dataset.csv", fmt: str = "csv"):
     """
-    Exporta la tabla signals_ml_dataset a CSV o Parquet.
+    Exporta la tabla senales_core a CSV o Parquet.
     
     Args:
+        symbol: Simbolo a filtrar (todos si vacio)
         output_path: Ruta del archivo de salida
-        format: 'csv' o 'parquet'
+        fmt: 'csv' o 'parquet'
     """
     db = Database("data/pivot.db")
     db.initialize()
@@ -36,60 +37,52 @@ def export_ml_dataset(output_path: str = "ml_dataset.csv", format: str = "csv"):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT name FROM sqlite_master 
-        WHERE type='table' AND name='signals_ml_dataset'
+        WHERE type='table' AND name='senales_core'
     """)
     
     if not cursor.fetchone():
-        print("❌ No existe la tabla signals_ml_dataset en la base de datos.")
-        print("   Ejecutá backtests o operaciones en vivo primero.")
+        print("No existe la tabla senales_core en la base de datos.")
+        print("Ejecuta backtests o operaciones en vivo primero.")
         return False
     
-    # Consultar todos los datos
-    query = """
-        SELECT * FROM signals_ml_dataset 
-        ORDER BY timestamp_entrada
-    """
-    
-    df = pd.read_sql_query(query, conn)
+    # Consultar datos
+    if symbol:
+        query = "SELECT * FROM senales_core WHERE symbol=? ORDER BY entry_time"
+        df = pd.read_sql_query(query, conn, params=(symbol.upper(),))
+    else:
+        query = "SELECT * FROM senales_core ORDER BY entry_time"
+        df = pd.read_sql_query(query, conn)
     
     if len(df) == 0:
-        print("⚠️  La tabla signals_ml_dataset está vacía.")
+        print("La tabla senales_core esta vacia.")
         return False
     
     # Exportar
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    if format.lower() == "csv":
+    if fmt.lower() == "csv":
         df.to_csv(output_path, index=False)
-        print(f"✅ Dataset exportado a {output_path}")
-        print(f"   - {len(df)} registros")
-        print(f"   - {len(df.columns)} columnas")
-        
-        # Estadísticas básicas
-        if 'fue_ganadora' in df.columns:
-            ganadoras = df['fue_ganadora'].sum()
-            total = len(df)
-            winrate = (ganadoras / total * 100) if total > 0 else 0
-            print(f"   - Win Rate histórico: {winrate:.2f}% ({ganadoras}/{total})")
-            
-    elif format.lower() == "parquet":
+        print(f"Dataset exportado a {output_path}")
+        print(f"  - {len(df)} registros")
+        print(f"  - {len(df.columns)} columnas")
+    elif fmt.lower() == "parquet":
         try:
             parquet_path = str(output_file.with_suffix('.parquet'))
             df.to_parquet(parquet_path, index=False)
-            print(f"✅ Dataset exportado a {parquet_path}")
-            print(f"   - {len(df)} registros")
+            print(f"Dataset exportado a {parquet_path}")
+            print(f"  - {len(df)} registros")
         except ImportError:
-            print("❌ PyArrow no instalado. Instalalo con: pip install pyarrow")
+            print("PyArrow no instalado. Instalalo con: pip install pyarrow")
             return False
     else:
-        print(f"❌ Formato '{format}' no soportado. Usá 'csv' o 'parquet'.")
+        print(f"Formato '{fmt}' no soportado. Usa 'csv' o 'parquet'.")
         return False
     
-    # Mostrar columnas disponibles
-    print(f"\n📊 Columnas disponibles:")
+    # Mostrar columnas
+    print(f"\nColumnas disponibles:")
     for col in df.columns:
-        print(f"   - {col}")
+        print(f"  - {col}")
     
     return True
 
@@ -97,6 +90,11 @@ def export_ml_dataset(output_path: str = "ml_dataset.csv", format: str = "csv"):
 def main():
     parser = argparse.ArgumentParser(
         description="Exportar dataset de ML para entrenamiento de modelos"
+    )
+    parser.add_argument(
+        "--symbol", "-s",
+        default="EURUSD",
+        help="Simbolo a exportar (default: EURUSD)"
     )
     parser.add_argument(
         "--output", "-o",
@@ -112,7 +110,7 @@ def main():
     
     args = parser.parse_args()
     
-    success = export_ml_dataset(args.output, args.format)
+    success = export_ml_dataset(args.symbol, args.output, args.format)
     sys.exit(0 if success else 1)
 
 

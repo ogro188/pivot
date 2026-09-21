@@ -225,8 +225,8 @@ async def _replay_asset(simbolo: str):
         try:
             await db.log_strategy(estrategia="PIVOT", nivel=nivel, simbolo=simbolo, mensaje=mensaje)
             await manager.send_console_log({
-                "ts": datetime.utcnow().isoformat(),
-                "t": datetime.utcnow().strftime("%H:%M:%S"),
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "t": datetime.now(timezone.utc).strftime("%H:%M:%S"),
                 "level": nivel,
                 "cat": "PIVOT",
                 "msg": mensaje,
@@ -270,7 +270,7 @@ async def _replay_asset(simbolo: str):
                 "price": price,
                 "bid": price,
                 "ask": price,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
             ts_bar = int(bar["timestamp"].timestamp() * 1000)
@@ -300,7 +300,7 @@ async def _replay_asset(simbolo: str):
                 await manager.broadcast({
                     "type": "signal",
                     "data": sig,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
             await asyncio.sleep(0.15)
@@ -558,6 +558,7 @@ def create_app() -> FastAPI:
             "objetivo": None,
             "invalidacion": None,
             "narrativa": f"Detector: {r['detector'] or 'D0'}",
+            "detectores": [r['detector'] or 'D0'] if r['detector'] else [],
             "estado": "activa",
         } for r in rows]
 

@@ -11,7 +11,7 @@ export interface SignalDTO {
 
 export interface AssetDTO {
   simbolo: string; nombre: string; running: boolean; connected: boolean;
-  price: number; session: string; kill_zone: string;
+  price: number | null; session: string; kill_zone: string;
   strategies_active: number; signals_today: number;
   decimales?: number;
   punto: number;
@@ -25,7 +25,7 @@ export interface CandleDTO {
 }
 
 export interface LogEntryDTO {
-  ts: number; t: string; level: string; cat: string; msg: string; est?: string;
+  ts: string; t: string; level: string; cat: string; msg: string; est?: string;
 }
 
 interface AppStore {

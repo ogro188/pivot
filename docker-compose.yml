@@ -9,22 +9,16 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./logs:/app/logs
-      - pivot_storage:/app/data/storage
     env_file:
       - .env
     environment:
-      - DATABASE_URL=sqlite:///app/data/storage/pivot.db
+      - DATABASE_URL=sqlite:///app/data/pivot.db
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DERIV_APP_ID=${DERIV_APP_ID:-}
       - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
-      - MAX_POSICIONES_ABIERTAS=${MAX_POSICIONES_ABIERTAS:-5}
-      - MAX_OPERACIONES_DIA=${MAX_OPERACIONES_DIA:-20}
-      - MAX_DRAWDOWN_DIARIO=${MAX_DRAWDOWN_DIARIO:-0.05}
-      - DEFAULT_CAPITAL_INICIAL=${DEFAULT_CAPITAL_INICIAL:-10000}
-      - DEFAULT_RISK_PERCENT=${DEFAULT_RISK_PERCENT:-1.0}
-      - DEFAULT_TP_PIPS=${DEFAULT_TP_PIPS:-30}
-      - DEFAULT_SL_PIPS=${DEFAULT_SL_PIPS:-15}
+      - DERIV_SYMBOL=${DERIV_SYMBOL:-1HZ100V}
+      - DERIV_TIMEFRAMES=${DERIV_TIMEFRAMES:-M15,H1,H4,D1}
+      - DERIV_ACCOUNT_TYPE=${DERIV_ACCOUNT_TYPE:-virtual}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
@@ -35,53 +29,19 @@ services:
     networks:
       - pivot_network
 
-  # WebSocket Server para datos en vivo
-  pivot-ws:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: pivot-ws
-    command: python scripts/run_deriv_ws.py
-    ports:
-      - "8765:8765"
-    volumes:
-      - ./data:/app/data
-      - pivot_storage:/app/data/storage
-    env_file:
-      - .env
-    environment:
-      - DERIV_APP_ID=${DERIV_APP_ID:-}
-      - DERIV_API_TOKEN=${DERIV_API_TOKEN:-}
-      - WS_PORT=8765
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    depends_on:
-      - pivot-api
-    restart: unless-stopped
-    networks:
-      - pivot_network
-
   # Frontend React
   pivot-frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
-        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8765}
     container_name: pivot-frontend
     ports:
       - "3000:80"
-    env_file:
-      - .env
     depends_on:
       - pivot-api
     restart: unless-stopped
     networks:
       - pivot_network
-
-volumes:
-  pivot_storage:
-    driver: local
 
 networks:
   pivot_network:

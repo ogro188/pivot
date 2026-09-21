@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Dict, List, Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class ConnectionManager:
         message = {
             "type": "signal",
             "data": signal,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         await self.broadcast(message)
         logger.info(f"Señal broadcast: {signal.get('tipo', 'UNKNOWN')} en {signal.get('simbolo', 'N/A')}")
@@ -114,7 +114,7 @@ class ConnectionManager:
             "price": price,
             "bid": bid or price,
             "ask": ask or price,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         await self.broadcast_to_asset(asset, message)
     
@@ -123,7 +123,7 @@ class ConnectionManager:
         message = {
             "type": "consola",
             "data": log_entry,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         await self.broadcast(message)
 

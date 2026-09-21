@@ -1,6 +1,6 @@
 {
   "simbolo": "XAUUSD",
-  "punto": 0.01,
+  "point": 0.01,
   "tick_size": 0.01,
   "contract_size": 100,
   "session_open": "00:00",

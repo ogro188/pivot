@@ -255,8 +255,8 @@ class CSVFeed:
         """
         # Buscar el índice más cercano
         try:
-            self.idx = self.df.index.get_loc(timestamp, method="ffill")
-        except:
+            self.idx = self.df.index.get_indexer([method], method="ffill")[0] if method else self.df.index.get_loc(timestamp)
+        except Exception:
             # Si no encuentra, buscar el más cercano
             diffs = (self.df.index - timestamp).abs()
             self.idx = diffs.argmin()

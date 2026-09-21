@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install --user -r requirements.txt
+    pip install -r requirements.txt
 
 # ---- Runtime stage ----
 FROM python:3.11-slim
@@ -31,8 +31,7 @@ LABEL version="2.0"
 LABEL description="Sistema de Trading y Backtesting PIVOT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/root/.local/bin:$PATH"
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -42,30 +41,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar paquetes instalados desde builder
-COPY --from=builder /root/.local /root/.local
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copiar código fuente
 COPY kernel/ ./kernel/
 COPY core/ ./core/
 COPY estrategias/ ./estrategias/
 COPY activos/ ./activos/
-COPY data/ ./data/
-COPY docs/ ./docs/
-COPY tests/ ./tests/
 COPY scripts/ ./scripts/
 COPY cli.py .
-COPY test_pivot_backtest.py .
 COPY pytest.ini .
+
+# Crear directorio data con placeholder (el volumen lo sobreescribe)
+RUN mkdir -p /app/data
 
 # Crear usuario no-root
 RUN useradd -m -u 1000 pivot && \
-    mkdir -p /app/data/storage /app/logs && \
     chown -R pivot:pivot /app
 
 USER pivot
 
-# Exponer puertos
-EXPOSE 8000 8765
+# Exponer puerto
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \

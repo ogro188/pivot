@@ -95,7 +95,7 @@ export default function ConfigPage() {
                 <div className="flex justify-between items-center">
                   <span className="font-mono font-semibold text-sm text-text-primary">{s}</span>
                   {st.status && (
-                    <span className={`text-[10px] font-condensed tracking-wide ${st.status.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                    <span className={`text-[10px] font-condensed tracking-wide ${st.status.ok ? 'text-brand-cyan' : 'text-red-400'}`}>
                       {st.status.msg}
                     </span>
                   )}

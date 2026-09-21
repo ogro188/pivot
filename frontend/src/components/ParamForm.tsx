@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
 interface ParamSchema {
-  tipo: string; default: any; min?: number; max?: number; label: string;
-  grupo?: string; opciones?: string[]
+  tipo: string; default: any; min?: number; max?: number; label?: string;
+  descripcion?: string; grupo?: string; opciones?: string[]
 }
 
 export default function ParamForm({
@@ -29,7 +29,7 @@ export default function ParamForm({
               const val = values[k] !== undefined ? values[k] : s.default
               return (
                 <div key={k}>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">{s.label}</label>
+                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">{s.label || s.descripcion || k}</label>
                   {s.tipo === 'select' ? (
                     <select
                       className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary"

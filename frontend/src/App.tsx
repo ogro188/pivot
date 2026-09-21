@@ -55,7 +55,6 @@ function App() {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       const denied = localStorage.getItem('notifications_denied')
       if (!denied) {
-        // Mostrar toast/banner sutil - por simplicidad pedimos directo
         Notification.requestPermission().then((perm) => {
           if (perm === 'granted') {
             setPushNotificationsEnabled(true)
@@ -64,7 +63,7 @@ function App() {
           }
         })
       }
-    } else if (Notification.permission === 'granted') {
+    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       setPushNotificationsEnabled(true)
     }
   }, [setPushNotificationsEnabled])
@@ -154,7 +153,7 @@ function App() {
       clearTimeout(reconnectTimer)
       ws?.close()
     }
-  }, [setWsConnected, addSignal, addLog, setAssetPrice, upsertCandle, setDerivConnected, setDerivAssets, soundsEnabled, pushNotificationsEnabled])
+  }, [setWsConnected, addSignal, addLog, setAssetPrice, upsertCandle, setDerivConnected, setDerivAssets])
 
   return (
     <div className="min-h-screen bg-base-bg text-text-primary">

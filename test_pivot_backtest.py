@@ -34,10 +34,9 @@ def main():
     # Cargar datos desde CSV
     csv_path = Path("data/eurusd_m15.csv")
     if not csv_path.exists():
-        print(f"❌ Error: No se encontró {csv_path}")
-        print("Generando datos de prueba...")
-        from kernel.feeds.csv import generar_datos_prueba
-        generar_datos_prueba(str(csv_path), n_velas=1000)
+        print(f"Error: No se encontro {csv_path}")
+        print("Descarga los datos EURUSD M15 en data/eurusd_m15.csv")
+        return 1
     
     print(f"\n📊 Cargando datos desde {csv_path}...")
     feed = CSVFeed(

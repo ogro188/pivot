@@ -1,6 +1,6 @@
 {
   "simbolo": "EURUSD",
-  "punto": 0.00001,
+  "point": 0.00001,
   "tick_size": 0.00001,
   "contract_size": 100000,
   "session_open": "00:00",
