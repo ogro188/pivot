@@ -1,12 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchSignals, fetchLogs, startAsset, stopAsset, fetchHistory, fetchAssets, fetchAssetNtfy, saveAssetNtfy, testAssetNtfy } from '../api'
+import { fetchSignals, fetchLogs, startAsset, stopAsset, fetchHistory, fetchAssets } from '../api'
 import { useStore } from '../store'
 import ChartHost, { type VisibleRange } from '../components/ChartHost'
 import SignalCard from '../components/SignalCard'
 import SignalCountdown from '../components/SignalCountdown'
 import DetectorReadout from '../components/DetectorReadout'
+import AssetNtfyForm from '../components/AssetNtfyForm'
 
 const DEFAULT_PARAMS = {
   confianza_minima: 65,
@@ -44,41 +45,6 @@ export default function ActivoPage() {
   const globalSignals = useStore((s) => s.globalSignals)
   const assetConfig = useStore((s) => s.getAssetConfig(simbolo || ''))
   const setAssetConfig = useStore((s) => s.setAssetConfig)
-
-  const [ntfyTopic, setNtfyTopic] = useState('')
-  const [ntfyServer, setNtfyServer] = useState('https://ntfy.sh')
-  const [ntfyStatus, setNtfyStatus] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [ntfyTesting, setNtfyTesting] = useState(false)
-
-  useEffect(() => {
-    if (!simbolo) return
-    fetchAssetNtfy(simbolo).then((cfg) => {
-      setNtfyTopic(cfg.topic || '')
-      setNtfyServer(cfg.server || 'https://ntfy.sh')
-    }).catch(() => {})
-  }, [simbolo])
-
-  const handleSaveNtfy = async () => {
-    try {
-      await saveAssetNtfy(simbolo!, ntfyTopic, ntfyServer)
-      setNtfyStatus({ ok: true, msg: 'Configuración guardada' })
-    } catch {
-      setNtfyStatus({ ok: false, msg: 'Error al guardar' })
-    }
-  }
-
-  const handleTestNtfy = async () => {
-    setNtfyTesting(true)
-    setNtfyStatus(null)
-    try {
-      const res = await testAssetNtfy(simbolo!)
-      setNtfyStatus({ ok: !!res.ok, msg: res.detail || (res.ok ? 'Notificación enviada' : 'Falló') })
-    } catch {
-      setNtfyStatus({ ok: false, msg: 'Error de conexión' })
-    } finally {
-      setNtfyTesting(false)
-    }
-  }
 
   const { data: assets } = useQuery({ queryKey: ['assets'], queryFn: fetchAssets, refetchInterval: 5000 })
   const running = assets?.find((a: any) => a.simbolo === simbolo)?.running ?? false
@@ -305,27 +271,7 @@ export default function ActivoPage() {
           </div>
           <div className="panel p-2.5 space-y-1.5">
             <div className="font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-2">Notificaciones ntfy</div>
-            <div>
-              <label className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
-              <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
-            </div>
-            <div>
-              <label className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Server</label>
-              <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} placeholder="https://ntfy.sh" />
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button onClick={handleSaveNtfy} className="flex-1 bg-base-panel2 hover:bg-base-line text-text-secondary px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors">
-                Guardar
-              </button>
-              <button onClick={handleTestNtfy} disabled={ntfyTesting || !ntfyTopic} className={`flex-1 px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors ${ntfyTesting || !ntfyTopic ? 'bg-base-panel2 border border-base-line text-text-muted cursor-default' : 'border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10'}`}>
-                {ntfyTesting ? 'Probando…' : 'Test'}
-              </button>
-            </div>
-            {ntfyStatus && (
-              <div className={`text-[10px] font-condensed tracking-wide ${ntfyStatus.ok ? 'text-brand-cyan' : 'text-red-400'}`}>
-                {ntfyStatus.msg}
-              </div>
-            )}
+            <AssetNtfyForm simbolo={simbolo!} compact />
             <div className="text-[9px] font-condensed text-text-muted tracking-wide pt-1 border-t border-base-line">
               Las notificaciones se envían tanto en modo replay como con Deriv conectado.
             </div>
