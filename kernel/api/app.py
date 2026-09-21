@@ -471,6 +471,7 @@ def create_app() -> FastAPI:
                 fuente = "csv"  # el activo es deriv pero no hay stream activo
 
             precio = _PRICES.get(activo.simbolo)
+            price = None
             if deriv_stream and deriv_stream.price is not None:
                 price = deriv_stream.price
             elif price is None:
