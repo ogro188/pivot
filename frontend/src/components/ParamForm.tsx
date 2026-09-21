@@ -29,9 +29,10 @@ export default function ParamForm({
               const val = values[k] !== undefined ? values[k] : s.default
               return (
                 <div key={k}>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">{s.label || s.descripcion || k}</label>
+                  <label htmlFor={`param-${k}`} className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">{s.label || s.descripcion || k}</label>
                   {s.tipo === 'select' ? (
                     <select
+                      id={`param-${k}`}
                       className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary"
                       value={val}
                       onChange={(e) => onChange(k, e.target.value)}
@@ -40,12 +41,15 @@ export default function ParamForm({
                     </select>
                   ) : s.tipo === 'bool' ? (
                     <input
+                      id={`param-${k}`}
                       type="checkbox"
+                      className="w-4 h-4 accent-brand-cyan"
                       checked={val}
                       onChange={(e) => onChange(k, e.target.checked)}
                     />
                   ) : (
                     <input
+                      id={`param-${k}`}
                       type={s.tipo === 'int' || s.tipo === 'float' ? 'number' : 'text'}
                       min={s.min} max={s.max}
                       className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular"
