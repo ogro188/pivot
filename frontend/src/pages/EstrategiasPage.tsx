@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchStrategies, fetchAssets } from '../api'
 
@@ -20,9 +21,9 @@ export default function EstrategiasPage() {
             </div>
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
               {assets?.map((a: any) => (
-                <button key={a.simbolo} className="font-mono text-[11px] border border-base-line bg-base-panel2 hover:bg-base-line text-text-secondary px-2 py-1 transition-colors">
+                <Link key={a.simbolo} to={`/activo/${a.simbolo}`} className="font-mono text-[11px] border border-base-line bg-base-panel2 hover:bg-base-line text-text-secondary px-2 py-1 transition-colors text-center">
                   {a.simbolo}
-                </button>
+                </Link>
               ))}
             </div>
           </div>
