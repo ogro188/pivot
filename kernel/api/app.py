@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 try:
@@ -210,7 +210,7 @@ async def _contar_senales_hoy(simbolo: str) -> int:
         return 0
 
 
-async def _replay_asset(simbolo: str):
+async def _replay_asset(simbolo: str, params: dict | None = None):
     """Replay simulado en vivo: recorre el CSV M15 barra a barra, emite ticks por
     WebSocket y emite/persiste las señales del motor PIVOT."""
     from kernel.activos_loader import cargar_activo
@@ -246,6 +246,8 @@ async def _replay_asset(simbolo: str):
         try:
             registro = RegistroEstrategias()
             estrategia = registro.fabricar("PIVOT")
+            if params:
+                estrategia.setup(params, activo)
             engine = BacktestEngine(estrategia=estrategia, activo=activo)
             engine.ejecutar(feeds={"M15": feed})
             señales = list(getattr(engine, "señales_generadas", []))
@@ -594,7 +596,7 @@ def create_app() -> FastAPI:
         } for r in rows]
 
     @app.post("/api/assets/{simbolo}/start")
-    async def start_asset(simbolo: str) -> Dict[str, Any]:
+    async def start_asset(simbolo: str, body: Dict[str, Any] = Body(default={})) -> Dict[str, Any]:
         """Inicia el runtime simulado (replay CSV + WebSocket) de un activo."""
         from kernel.activos_loader import cargar_activo
         try:
@@ -613,7 +615,7 @@ def create_app() -> FastAPI:
             )
 
         _RUNNING[activo.simbolo] = True
-        task = asyncio.create_task(_replay_asset(activo.simbolo))
+        task = asyncio.create_task(_replay_asset(activo.simbolo, params=body))
         _RUNTIME_TASKS[activo.simbolo] = task
         return {"status": "ok", "simbolo": activo.simbolo, "running": True}
 

@@ -15,7 +15,7 @@ export interface BacktestRequest {
 
 export const fetchAssets = () => API.get('/assets').then((r) => r.data)
 export const fetchStrategies = () => API.get('/strategies').then((r) => r.data)
-export const startAsset = (s: string) => API.post(`/assets/${s}/start`).then((r) => r.data)
+export const startAsset = (s: string, params?: Record<string, any>) => API.post(`/assets/${s}/start`, params || {}).then((r) => r.data)
 export const stopAsset = (s: string) => API.post(`/assets/${s}/stop`).then((r) => r.data)
 export const fetchHistory = (s: string, tf: string, count = 200) =>
   API.get(`/assets/${s}/history`, { params: { tf, count } }).then((r) => r.data)

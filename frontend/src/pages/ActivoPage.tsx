@@ -132,7 +132,7 @@ export default function ActivoPage() {
 
   const handleStart = async () => {
     try {
-      await startAsset(simbolo!)
+      await startAsset(simbolo!, params)
       queryClient.invalidateQueries({ queryKey: ['assets'] })
       refetchSignals()
     } catch {
