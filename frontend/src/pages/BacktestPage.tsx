@@ -45,8 +45,9 @@ export default function BacktestPage() {
   }
 
   const equity = result?.equity || []
-  const eqMin = equity.length ? Math.min(...equity.map((e: any) => e[1])) : 0
-  const eqMax = equity.length ? Math.max(...equity.map((e: any) => e[1])) : 1
+  let eqMin = Infinity, eqMax = -Infinity
+  for (const [, v] of equity) { if (v < eqMin) eqMin = v; if (v > eqMax) eqMax = v }
+  if (!equity.length) { eqMin = 0; eqMax = 1 }
   const eqRange = eqMax - eqMin || 1
 
   return (
