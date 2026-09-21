@@ -7,6 +7,7 @@ import ConfigPage from './pages/ConfigPage'
 import NavBar from './components/NavBar'
 import { useEffect, useRef } from 'react'
 import { useStore } from './store'
+import { fetchAssets, fetchSignals } from './api'
 
 const SOUND_COOLDOWN_MS = 3000
 
@@ -31,6 +32,25 @@ function App() {
   useEffect(() => {
     audioRef.current = new Audio('/sounds/alert.mp3')
     audioRef.current.volume = 0.3
+  }, [])
+
+  // Hidratar globalSignals desde la API al montar
+  useEffect(() => {
+    const hydrated = sessionStorage.getItem('signals_hydrated')
+    if (hydrated) return
+    fetchAssets().then((assets: any[]) => {
+      const symbols = assets.map((a: any) => a.simbolo).filter(Boolean)
+      return Promise.all(symbols.map((s: string) => fetchSignals(s, 50).catch(() => [])))
+    }).then((results) => {
+      const all = results.flat().sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
+      const store = useStore.getState()
+      for (const sig of all) {
+        if (!store.globalSignals.find((s: any) => s.id === sig.id)) {
+          store.addSignal(sig)
+        }
+      }
+      sessionStorage.setItem('signals_hydrated', '1')
+    }).catch(() => {})
   }, [])
 
   // Reproducir sonido si está habilitado y pasó el cooldown
