@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react'
 import { SignalDTO } from '../store'
 
 interface SignalCountdownProps {
@@ -6,12 +7,28 @@ interface SignalCountdownProps {
 }
 
 export default function SignalCountdown({ signal, onExpire }: SignalCountdownProps) {
+  const [, forceTick] = useState(0)
+  const expiredRef = useRef(false)
+
+  useEffect(() => {
+    const id = setInterval(() => forceTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const timeframe = signal.timeframe || 'M15'
   const minutesPerCandle = timeframe === 'M15' ? 15 : timeframe === 'H1' ? 60 : timeframe === 'H4' ? 240 : 1440
   const expirationMs = (signal.ts || 0) + signal.expiracion_velas * minutesPerCandle * 60 * 1000
   const now = Date.now()
   const remainingMs = expirationMs - now
   const isExpired = remainingMs <= 0
+
+  useEffect(() => {
+    if (isExpired && !expiredRef.current && onExpire) {
+      expiredRef.current = true
+      onExpire()
+    }
+  }, [isExpired, onExpire])
+
   const isLong = signal.direccion === 1
   const dirColor = isLong ? 'text-signal-long' : 'text-signal-short'
   const dirLabel = isLong ? 'LONG' : 'SHORT'
