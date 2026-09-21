@@ -302,6 +302,19 @@ async def _replay_asset(simbolo: str):
                     "data": sig,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
+                try:
+                    from kernel.ntfy import cargar_config_activo, enviar as ntfy_enviar
+                    ntfy_cfg = cargar_config_activo(activo.simbolo)
+                    if ntfy_cfg.get("topic"):
+                        dir_txt = "CALL" if sig["direccion"] == 1 else "PUT"
+                        texto = (
+                            f"SEÑAL — {activo.simbolo}\n"
+                            f"{dir_txt} @ {sig['precio']}\n"
+                            f"Confianza {sig['confianza'][0]}-{sig['confianza'][1]}%"
+                        )
+                        await asyncio.to_thread(ntfy_enviar, activo.simbolo, texto, ntfy_cfg)
+                except Exception as e:
+                    logger.debug(f"ntfy no enviado en replay: {e}")
 
             await asyncio.sleep(0.15)
 

@@ -324,6 +324,9 @@ export default function ActivoPage() {
                 {ntfyStatus.msg}
               </div>
             )}
+            <div className="text-[9px] font-condensed text-text-muted tracking-wide pt-1 border-t border-base-line">
+              Las notificaciones se envían tanto en modo replay como con Deriv conectado.
+            </div>
           </div>
         </div>
       </div>

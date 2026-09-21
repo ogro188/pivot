@@ -132,6 +132,9 @@ export default function ConfigPage() {
           <li>Cada activo puede tener su propio topic; las señales de ese activo se envían ahí</li>
           <li>Usa el botón Test para comprobar la conexión</li>
         </ul>
+        <p className="font-condensed text-[10px] text-text-muted tracking-wide pt-2 border-t border-base-line">
+          Las notificaciones se envían tanto en modo replay como con Deriv conectado.
+        </p>
       </div>
     </div>
   )
