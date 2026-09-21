@@ -6,10 +6,10 @@ interface ParamSchema {
 }
 
 export default function ParamForm({
-  schema, values, onChange, onSubmit
+  schema, values, onChange, onSubmit, loading
 }: {
   schema: Record<string, ParamSchema>; values: Record<string, any>;
-  onChange: (k: string, v: any) => void; onSubmit: () => void
+  onChange: (k: string, v: any) => void; onSubmit: () => void; loading?: boolean
 }) {
   const grupos: Record<string, string[]> = {}
   Object.entries(schema).forEach(([k, s]) => {
@@ -59,8 +59,8 @@ export default function ParamForm({
           </div>
         </div>
       ))}
-      <button onClick={onSubmit} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors">
-        Ejecutar Backtest
+      <button onClick={onSubmit} disabled={loading} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors disabled:opacity-50">
+        {loading ? 'Ejecutando...' : 'Ejecutar Backtest'}
       </button>
     </div>
   )

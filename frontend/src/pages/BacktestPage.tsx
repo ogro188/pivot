@@ -90,6 +90,7 @@ export default function BacktestPage() {
             values={params}
             onChange={(k, v) => setParams((p) => ({ ...p, [k]: v }))}
             onSubmit={handleSubmit}
+            loading={loading}
           />
         ) : (
           <button onClick={handleSubmit} disabled={loading} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors disabled:opacity-50">
