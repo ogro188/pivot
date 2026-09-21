@@ -31,12 +31,8 @@ export interface LogEntryDTO {
 interface AppStore {
   assets: Record<string, AssetDTO>;
   globalSignals: SignalDTO[];
-  activeAsset: string | null;
   candles: Record<string, CandleDTO[]>;
-  signals: SignalDTO[];
   consoleLogs: LogEntryDTO[];
-  overlays: any[];
-  backtestJobs: Record<string, any>;
   wsConnected: boolean;
   derivConnected: boolean;
   derivAssets: Record<string, any>;
@@ -72,12 +68,8 @@ export const useStore = create<AppStore>()(
     (set, get) => ({
       assets: {},
       globalSignals: [],
-      activeAsset: null,
       candles: {},
-      signals: [],
       consoleLogs: [],
-      overlays: [],
-      backtestJobs: {},
       wsConnected: false,
       derivConnected: false,
       derivAssets: {},
