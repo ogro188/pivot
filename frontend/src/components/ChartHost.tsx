@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { ChartView, DrawingToolbar, IndicatorController, IndicatorPicker, createBuiltinRegistry, type ChartController } from '@getcandlekit/charts/react'
-import { createSeriesMarkers, ISeriesApi, ISeriesMarkersPluginApi, UTCTimestamp, SeriesMarker } from 'lightweight-charts'
+import { createSeriesMarkers, ISeriesApi, ISeriesMarkersPluginApi, UTCTimestamp, SeriesMarker, LogicalRange } from 'lightweight-charts'
 import { CandleDTO, SignalDTO, AssetDTO } from '../store'
+
+export interface VisibleRange {
+  from: number
+  to: number
+}
 
 interface ChartHostProps {
   candles: CandleDTO[]
@@ -9,6 +14,10 @@ interface ChartHostProps {
   height?: number
   asset?: AssetDTO
   id?: string
+  toolbar?: boolean
+  syncGroup?: string
+  visibleRange?: VisibleRange | null
+  onVisibleRangeChange?: (range: VisibleRange) => void
 }
 
 function toChartBar(c: CandleDTO) {
@@ -22,12 +31,13 @@ function toChartBar(c: CandleDTO) {
   }
 }
 
-export default function ChartHost({ candles, signals = [], height = 400, asset, id }: ChartHostProps) {
+export default function ChartHost({ candles, signals = [], height = 400, asset, id, toolbar = true, syncGroup, visibleRange, onVisibleRangeChange }: ChartHostProps) {
   const markersRef = useRef<ISeriesMarkersPluginApi<UTCTimestamp> | null>(null)
   const controllerRef = useRef<ChartController | null>(null)
   const idRef = useRef(id)
   const [ready, setReady] = useState(false)
   const storageKey = `drawings:${id || asset?.simbolo || 'chart'}`
+  const syncingRef = useRef(false)
 
   const indicators = useMemo(() => {
     const c = new IndicatorController(createBuiltinRegistry())
@@ -36,8 +46,6 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
     return c
   }, [])
 
-  // La vela formándose se actualiza con updateBar (sin resetear el zoom).
-  // El setData solo ocurre cuando cambian las velas cerradas (una vez por vela).
   const forming = candles.length > 0 ? candles[candles.length - 1] : undefined
   const closed = candles.length > 1 ? candles.slice(0, -1) : []
   const closedKey = useMemo(
@@ -47,7 +55,6 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
 
   const data = useMemo(() => closed.map(toChartBar), [closedKey])
 
-  // Cambio de símbolo / timeframe: re-ajustar el rango visible.
   useEffect(() => {
     if (idRef.current === id) return
     idRef.current = id
@@ -57,12 +64,21 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
     }
   }, [id])
 
-  // Live: actualizar solo la última vela formándose sin resetear el zoom.
   useEffect(() => {
     const ctl = controllerRef.current
     if (!ctl || !forming) return
     ctl.updateBar(toChartBar(forming))
   }, [forming])
+
+  // Sync: apply visible range from parent
+  useEffect(() => {
+    if (!syncGroup || !visibleRange) return
+    const ctl = controllerRef.current
+    if (!ctl) return
+    syncingRef.current = true
+    ctl.getChart().timeScale().setVisibleLogicalRange(visibleRange)
+    requestAnimationFrame(() => { syncingRef.current = false })
+  }, [visibleRange, syncGroup])
 
   return (
     <ChartView
@@ -71,8 +87,8 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
       theme="dark"
       showVolume
       autoFit
-      drawing={{ storageKey }}
-      indicators={indicators}
+      drawing={toolbar ? { storageKey } : undefined}
+      indicators={toolbar ? indicators : undefined}
       style={{ height, width: '100%' }}
       className="w-full rounded-sm overflow-hidden"
       onReady={({ controller }) => {
@@ -88,10 +104,19 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
         }
         markersRef.current = createSeriesMarkers<UTCTimestamp>(controller.getSeries() as ISeriesApi<'Candlestick', UTCTimestamp>, [])
         setReady(true)
+
+        // Subscribe to visible range changes for sync
+        if (syncGroup && onVisibleRangeChange) {
+          controller.getChart().timeScale().subscribeVisibleLogicalRangeChange((range: LogicalRange | null) => {
+            if (!syncingRef.current && range) {
+              onVisibleRangeChange({ from: range.from, to: range.to })
+            }
+          })
+        }
       }}
     >
-      <DrawingToolbar />
-      <IndicatorPicker />
+      {toolbar && <DrawingToolbar />}
+      {toolbar && <IndicatorPicker />}
       <SignalsMarkers signals={signals} targets={markersRef} ready={ready} />
     </ChartView>
   )

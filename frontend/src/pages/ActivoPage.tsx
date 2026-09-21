@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { fetchSignals, fetchLogs, startAsset, stopAsset, fetchHistory, fetchAssets, fetchAssetNtfy, saveAssetNtfy, testAssetNtfy } from '../api'
 import { useStore } from '../store'
-import ChartHost from '../components/ChartHost'
+import ChartHost, { type VisibleRange } from '../components/ChartHost'
 import SignalCard from '../components/SignalCard'
 import SignalCountdown from '../components/SignalCountdown'
 import DetectorReadout from '../components/DetectorReadout'
@@ -35,6 +35,8 @@ export default function ActivoPage() {
   const [tab, setTab] = useState<'signals' | 'consola' | 'strategies'>('signals')
   const [tf, setTf] = useState('M15')
   const [multiTf, setMultiTf] = useState(false)
+  const [sharedRange, setSharedRange] = useState<VisibleRange | null>(null)
+  const onRangeChange = useCallback((range: VisibleRange) => setSharedRange(range), [])
   const candles = useStore((s) => s.candles[`${simbolo}:${tf}`] || [])
   const candlesH1 = useStore((s) => s.candles[`${simbolo}:H1`] || [])
   const candlesH4 = useStore((s) => s.candles[`${simbolo}:H4`] || [])
@@ -209,9 +211,9 @@ export default function ActivoPage() {
             <ChartHost candles={candles} signals={currentSignals} height={400} asset={asset} id={`${simbolo}:${tf}`} />
           ) : (
             <div className="space-y-3">
-              <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} id={`${simbolo}:M15`} />
-              <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} id={`${simbolo}:H1`} />
-              <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} id={`${simbolo}:H4`} />
+              <ChartHost candles={candles} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'M15')} height={250} asset={asset} id={`${simbolo}:M15`} syncGroup="multi-tf" visibleRange={sharedRange} onVisibleRangeChange={onRangeChange} />
+              <ChartHost candles={candlesH1} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H1')} height={250} asset={asset} id={`${simbolo}:H1`} toolbar={false} syncGroup="multi-tf" visibleRange={sharedRange} onVisibleRangeChange={onRangeChange} />
+              <ChartHost candles={candlesH4} signals={globalSignals.filter((s) => s.asset === simbolo && (s.timeframe || 'M15') === 'H4')} height={250} asset={asset} id={`${simbolo}:H4`} toolbar={false} syncGroup="multi-tf" visibleRange={sharedRange} onVisibleRangeChange={onRangeChange} />
             </div>
           )}
 
