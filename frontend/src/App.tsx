@@ -1,13 +1,15 @@
 import { Routes, Route } from 'react-router-dom'
-import HubPage from './pages/HubPage'
-import ActivoPage from './pages/ActivoPage'
-import BacktestPage from './pages/BacktestPage'
-import EstrategiasPage from './pages/EstrategiasPage'
-import ConfigPage from './pages/ConfigPage'
+import { lazy, Suspense } from 'react'
 import NavBar from './components/NavBar'
 import { useEffect, useRef } from 'react'
 import { useStore } from './store'
 import { fetchAssets, fetchSignals } from './api'
+
+const HubPage = lazy(() => import('./pages/HubPage'))
+const ActivoPage = lazy(() => import('./pages/ActivoPage'))
+const BacktestPage = lazy(() => import('./pages/BacktestPage'))
+const EstrategiasPage = lazy(() => import('./pages/EstrategiasPage'))
+const ConfigPage = lazy(() => import('./pages/ConfigPage'))
 
 const SOUND_COOLDOWN_MS = 3000
 
@@ -168,13 +170,15 @@ function App() {
     <div className="min-h-screen bg-base-bg text-text-primary">
       <NavBar />
       <main className="p-3">
-        <Routes>
-          <Route path="/" element={<HubPage />} />
-          <Route path="/activo/:simbolo" element={<ActivoPage />} />
-          <Route path="/backtest" element={<BacktestPage />} />
-          <Route path="/estrategias" element={<EstrategiasPage />} />
-          <Route path="/config" element={<ConfigPage />} />
-        </Routes>
+        <Suspense fallback={<div className="p-4 text-text-muted">Cargando…</div>}>
+          <Routes>
+            <Route path="/" element={<HubPage />} />
+            <Route path="/activo/:simbolo" element={<ActivoPage />} />
+            <Route path="/backtest" element={<BacktestPage />} />
+            <Route path="/estrategias" element={<EstrategiasPage />} />
+            <Route path="/config" element={<ConfigPage />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   )
