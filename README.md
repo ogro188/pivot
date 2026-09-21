@@ -1,212 +1,281 @@
-# PIVOT — Sistema de Trading Algorítmico Multi-Timeframe
+# PIVOT — Multi-Timeframe Algorithmic Trading System
 
-> **Nota para cualquier agente de IA que trabaje en este repo:** este documento está escrito para que entiendas la arquitectura, los contratos y las reglas del proyecto sin tener que inferirlos leyendo todo el código de cero. Las secciones "Estado Verificado" y "Reglas No Negociables" son las más importantes — léelas antes de tocar código.
+## Overview
+
+PIVOT is a modular algorithmic trading system for pattern detection across multiple timeframes (M15, H1, H4, D1). It implements Smart Money Concepts (SMC) / Institutional Price Action detectors (D0–D5) with confluences, a vectorized backtesting engine, FastAPI + WebSocket API, and ML-ready data persistence.
+
+**Key characteristics:**
+- Signal generation only (no order execution)
+- Plugin architecture for strategies
+- Zero look-ahead guarantee in backtesting
+- Binary options and spot/forex modes
+- ML-ready dataset generation (100+ features per signal)
 
 ---
 
-## Qué es esto
-
-PIVOT detecta patrones de estructura de mercado (barridos de liquidez, order blocks, fair value gaps, market structure shifts) por confluencia de múltiples detectores en múltiples timeframes (M15/H1/H4/D1), y genera señales de trading — **nunca ejecuta órdenes, solo alerta**. Tiene un motor de backtest propio, una API FastAPI + WebSocket, y un frontend React de terminal de trading.
-
-Es la evolución standalone de un sistema anterior en MQL5 (MetaTrader). El operador (Martín) tiene 20 años de experiencia trading y diseñó la lógica de detección; el código se construye con asistencia de agentes de IA.
-
----
-
-## Mapa de Arquitectura
+## Architecture
 
 ```
-activos/*.json       → Configuración por instrumento (símbolo, punto, sesiones)
-core/                → Detectores D0-D5 (heredados de PivotRadar v8, MQL5→Python)
-                         d0_estructura.py, d1_ruptura.py, d2_sweep.py, d2_anticipacion.py,
-                         d3_fvg.py, d4_orderblock.py, d5_mss_sweep.py,
-                         motor_v8.py, scoring.py, hipotesis.py, alertas.py, estructuras.py, base.py, utils.py
-kernel/
-  contrato.py         → Contratos base: Estrategia, Contexto, Señal, ActivoInfo (ver abajo)
-  core_adapter.py     → Traduce Contexto del kernel ↔ Contexto del core (para reusar D0-D5)
-  activos_loader.py   → Carga activos/*.json → ActivoInfo
-  backtest.py         → BacktestEngine: simulación vela por vela, sin look-ahead (ver reglas)
-  storage.py          → Persistencia SQLite (operaciones, dataset ML, config)
-  runtime.py          → Orquestación de ejecución en vivo
-  feeds/               → CSVFeed (backtest), csv_resample.py (deriva H1/H4/D1 desde M15),
-                           deriv.py (feed en vivo vía Deriv API)
-  api/app.py          → Endpoints FastAPI (/api/backtest, /api/assets, /api/strategies, ...)
-estrategias/
-  registro.py         → Registro dinámico de estrategias (patrón plugin)
-  pivot/               → Estrategia PIVOT (la principal — confluencia D0-D5 + WilsonScorer)
-  ema_cross/, dummy/   → Estrategias de referencia/testing, mucho más simples
-data/                 → CSVs históricos (EURUSD M15/H1/H4/D1, XAUUSD M15)
-frontend/             → React + TS + Vite + Tailwind + Zustand + FastAPI/WebSocket client
-tests/unit/, tests/integration/ → pytest
-scripts/              → Utilidades (export_ml_dataset.py, run_deriv_ws.py)
-docs/                 → Documentación de fases — ver advertencia abajo
+pivot/
+├── activos/                 # Instrument configs (JSON)
+│   ├── eurusd.json
+│   ├── xauusd.json
+│   ├── eurusd_binary.json  # Binary options configs
+│   └── xauusd_binary.json
+├── core/                    # Detection engine (D0–D5)
+│   ├── d0_estructura.py     # H1 structure (swings, sweeps, zones)
+│   ├── d1_ruptura.py        # Range breakout
+│   ├── d2_sweep.py          # Liquidity sweep + reclaim
+│   ├── d2_anticipacion.py   # Anticipatory sweep + confluences
+│   ├── d3_fvg.py            # Fair Value Gap (normal/defended)
+│   ├── d4_orderblock.py     # Order Block + confluence
+│   ├── d5_mss_sweep.py      # MSS H4 + sweep M15
+│   ├── motor_v8.py          # Orchestrator (plugin architecture)
+│   ├── scoring.py           # Quality metrics (G1–G4, confluences)
+│   ├── hipotesis.py         # Narrative + expiry calculation
+│   ├── alertas.py           # Notification engine (ntfy)
+│   ├── estructuras.py       # Dataclasses (Signal, EstructuraRef)
+│   ├── base.py              # Base Contexto + helpers
+│   └── utils.py             # Clamping, pattern keys
+├── kernel/                  # System kernel
+│   ├── contrato.py          # Base contracts (Estrategia, Contexto, Señal, ActivoInfo, Binary*)
+│   ├── core_adapter.py      # Kernel ↔ Core context translation
+│   ├── activos_loader.py    # JSON → ActivoInfo loader
+│   ├── backtest.py          # BacktestEngine (bar-by-bar, no look-ahead)
+│   ├── storage.py           # SQLite persistence (ops, ML dataset, config)
+│   ├── runtime.py           # Live orchestration
+│   ├── feeds/
+│   │   ├── csv.py           # CSVFeed, MultiTimeframeFeed
+│   │   ├── csv_resample.py  # H1/H4/D1 derivation from M15
+│   │   └── deriv.py         # Deriv WebSocket feed
+│   └── binary/              # Binary options module
+│       ├── payout.py        # Broker payout tables (Deriv, IQOption, Pocket, Quotex)
+│       ├── risk.py          # Risk modes (Fixed, Martingale, Anti-Martingale, Kelly, %)
+│       └── engine.py        # BinaryBacktestEngine (temporal expiry, fixed payout)
+├── estrategias/             # Strategy plugins
+│   ├── registro.py          # Dynamic plugin registry
+│   ├── pivot/               # Main strategy (D0–D5 confluences + WilsonScorer)
+│   └── binary/
+│       └── pivot_binary.py  # PIVOT adapted for binary options
+├── data/                    # Historical CSVs (EURUSD M15/H1/H4/D1, XAUUSD M15)
+├── frontend/                # React + TS + Vite + Tailwind + Zustand
+├── tests/
+│   ├── unit/                # 70 unit tests
+│   └── integration/         # API + backtest integration tests
+├── scripts/
+│   ├── export_ml_dataset.py # ML dataset export (Parquet)
+│   └── run_deriv_ws.py      # Live WebSocket runner
+├── docker-compose.yml       # 3 services (API, WS, Frontend)
+├── Dockerfile               # Multi-stage, non-root user
+└── requirements.txt
 ```
 
 ---
 
-## El Contrato Central (`kernel/contrato.py`)
+## Core Contracts (`kernel/contrato.py`)
 
-Toda estrategia nueva implementa la clase abstracta `Estrategia`:
-
+### Abstract Strategy Interface
 ```python
 class Estrategia(ABC):
     nombre: str
     version: str
-    timeframes: List[str]      # qué timeframes necesita del Contexto
-    eventos: List[str]
+    timeframes: List[str]      # Required timeframes from Contexto
+    eventos: List[str]         # Trigger events (e.g., "candle_close")
 
+    @abstractmethod
     def setup(self, params: dict, activo: ActivoInfo) -> None: ...
+    @abstractmethod
     def detectar(self, contexto: Contexto) -> List[Señal]: ...
 ```
 
-`Contexto` trae `df_m15`, `df_h1`, `df_h4`, `df_d1` (DataFrames OHLC recortados al momento actual), `precio`, `tiempo`, `activo`. `Señal` trae dirección, precio, SL/TP, confianza, y los detectores que la generaron.
+### Contexto (Immutable Market Snapshot)
+- `df_m15`, `df_h1`, `df_h4`, `df_d1`: OHLC DataFrames (time-indexed, cropped to current bar)
+- `precio`, `tiempo`: Current price and timestamp
+- Indicator buffers: `g_atr8/14/30`, `g_ema21/50`, `g_rsi14`, `g_ema50/200_d1`, `g_ema20/50_h4`
+- Market state: `session`, `kill_zone`, `trend_d1`, `regimen_vol`
+- Injected helpers: `get_volume_ratio`, `detect_mss_h4`, `es_zona_premium_discount`
 
-Esto es lo que hace que el sistema sea extensible: agregar una estrategia nueva es implementar esta interfaz y registrarla en `estrategias/registro.py`, sin tocar el motor de backtest ni la API.
+### Señal (Spot/Forex) & BinarySeñal (Binary Options)
+- Common: `estrategia`, `simbolo`, `direccion` (1=LONG/CALL, -1=SHORT/PUT), `precio`, `tiempo`, `confianza`, `narrativa`, `contexto`
+- Spot: `stop_loss`, `take_profit`, `expiracion_velas`
+- Binary: `expiry_minutes`, `expiry_timestamp`, `payout_pct`, `contract_amount`, `option_type`
+- **Informational filters (v8.1+)**: `filtros_pasados`, `filtros_fallados`, `filtro_penetracion_atr`, `filtro_wick_ratio`, `filtro_fvg_size_atr`, `filtro_ob_impulse`, `filtro_mss_reciente`, etc.
+- `direction = 0` = no valid pattern (filtered before scoring)
 
 ---
 
-## Detectores D0-D5 (Core)
+## Detectors D0–D5
 
-| Detector | Archivo | Qué Detecta | Filtros Clave (ahora informacionales) |
-|----------|---------|-------------|----------------------------------------|
-| **D0** | `d0_estructura.py` | Estructura H1 (swings, sweeps, zonas) | Base para todos los demás |
-| **D1** | `d1_ruptura.py` | Ruptura de rango (n velas) | `penetracion_atr ≥ 0.5`, `body_ratio ≥ 0.4`, `volumen ≥ 1.2x`, `retest` |
-| **D2** | `d2_sweep.py` | Sweep de liquidez + reclaim | `wick_ratio ≥ 0.55`, `sweep_reciente ≤ 2`, `distancia ≤ 2×ATR`, `reclaim_body ≥ 0.55` |
-| **D2_A** | `d2_anticipacion.py` | Sweep anticipado + confluencias | `wick_ratio ≥ 0.33`, confluencias FVG/OB/MSS (≥2) |
-| **D3/D3_DEF** | `d3_fvg.py` | Fair Value Gap (defendido/normal) | `fvg_size_atr ≥ 0.20`, `body_ratio ≥ 0.55`, `dir_ok`, MSS alineado |
-| **D4** | `d4_orderblock.py` | Order Block + confluencia | `ob_body ≥ 0.40`, `impulse ≥ 0.70×ATR`, `no_tested`, `entering`, `distancia ≤ 2×ATR` |
+| ID | File | Pattern | Key Thresholds (Informational) |
+|----|------|---------|--------------------------------|
+| **D0** | `d0_estructura.py` | H1 structure (swings, sweeps, zones) | Base for all detectors |
+| **D1** | `d1_ruptura.py` | Range breakout (n bars) | `penetracion_atr ≥ 0.5`, `body_ratio ≥ 0.4`, `volumen ≥ 1.2×`, `retest` |
+| **D2** | `d2_sweep.py` | Liquidity sweep + reclaim | `wick_ratio ≥ 0.55`, `sweep_reciente ≤ 2`, `distancia ≤ 2×ATR`, `reclaim_body ≥ 0.55` |
+| **D2_A** | `d2_anticipacion.py` | Anticipatory sweep + confluences | `wick_ratio ≥ 0.33`, confluences FVG/OB/MSS (≥2) |
+| **D3** | `d3_fvg.py` | Fair Value Gap (normal/defended) | `fvg_size_atr ≥ 0.20`, `body_ratio ≥ 0.55`, `dir_ok`, MSS aligned |
+| **D4** | `d4_orderblock.py` | Order Block + confluence | `ob_body ≥ 0.40`, `impulse ≥ 0.70×ATR`, `no_tested`, `entering`, `distancia ≤ 2×ATR` |
 | **D5** | `d5_mss_sweep.py` | MSS H4 + sweep M15 | `mss_aligned`, `mss_reciente ≤ 12`, `wick_ratio ≥ 0.55`, `sweep_reciente ≤ 2`, `distancia ≤ 2×ATR`, `reclaim ≥ 0.55` |
 
-### Cambio Crítico (v8.1): Filtros Informacionales
-**Todos los detectores ahora retornan `Signal` SIEMPRE (nunca `None` por filtros).** Los filtros duros anteriores ahora son **informacionales**:
-
-- `signal.filtros_pasados: List[str]` — filtros que superaron el umbral
-- `signal.filtros_fallados: List[str]` — filtros que NO superaron el umbral
-- Campos numéricos dedicados: `filtro_penetracion_atr`, `filtro_wick_ratio`, `filtro_fvg_size_atr`, `filtro_ob_impulse`, `filtro_mss_reciente`, etc.
-- `signal.direction = 0` indica "sin patrón válido" (el motor lo descarta antes de scoring)
-
-**Beneficio:** Análisis post-hoc completo — "¿por qué esta señal tipo C falló el filtro de reclaim?" — sin perder la señal para ML/analytics.
+**v8.1 Change**: All detectors return `Signal` always (never `None` for filter failures). Hard filters converted to informational metadata. Motor filters `direction == 0` before scoring.
 
 ---
 
-## Filosofía de Diseño — "Radar Puro" (Regla de Producto, No Técnica)
+## Scoring & Confluences (`core/scoring.py`)
 
-Los detectores D0-D5 son los **únicos filtros de entrada**. Sesión, spread, ATR y volumen son **metadata que ajusta confianza, nunca gates duros** que bloquean una señal.
-
-Si vas a tocar `estrategias/pivot/__init__.py`, **no agregues** un `if condicion_de_contexto: return []` para filtros que no sean detectores D0-D5 — eso rompe el principio de diseño explícitamente establecido. Penalizar confianza sí, bloquear no.
-
----
-
-## Estado Verificado (Última Auditoría — No Confiar en `docs/FASE*_COMPLETADA.md` Sin Re-verificar)
-
-⚠️ **Este repo tuvo, en más de una ronda de desarrollo, documentos de progreso con cifras de impacto inventadas** (ej. un doc afirmó "911 registros en dataset ML" cuando la tabla real tenía 0 filas). Los peores casos ya se eliminaron, pero la regla para cualquier doc de estado nuevo es: **ningún número entra sin el comando exacto que lo produjo, corrido en esa sesión.**
-
-| Componente | Estado |
-|---|---|
-| `BacktestEngine` conectado a `/api/backtest` | ✅ Verificado — ya no es mock |
-| Resampling H1/H4/D1 sin look-ahead masivo | ✅ Verificado — precalculado una vez, recortado por timestamp por vela |
-| Look-ahead en el borde exacto de cada hora/4h/día | ⚠️ **Bug conocido, sin arreglar.** `_slice_tf()` en `kernel/backtest.py` usa `searchsorted(..., side="right")`, lo que incluye la vela H1/H4/D1 que recién está abriendo en el instante exacto del cambio de hora. Confirmado con test sobre 17.520 velas reales: ~32% de las barras tienen al menos una violación. Fix: cambiar a `side="left"` o filtro estricto `< tiempo_actual`. |
-| WilsonScorer conectado a la estrategia real | ✅ Verificado (`estrategias/pivot/__init__.py:219-220`) |
-| Persistencia de resultados en dataset ML | ✅ Verificado (`kernel/backtest.py:571`, llama a `db.guardar_resultado_operacion`) |
-| `id_señal` sin colisión (hash de detectores+dirección) | ✅ Verificado |
-| CI corre tests de integración pero no falla el build si fallan | ⚠️ **`.github/workflows/ci-cd.yml` línea 93 tiene `pytest tests/integration ... \|\| true`.** Un badge de CI en verde NO garantiza que los tests de integración pasen. |
-| `test_pivot_backtest.py` en la raíz (no en `tests/`) | Corre en CI como script standalone (línea 97 del workflow), no vía pytest. Funciona pero es inconsistente. |
-| Archivos sueltos en la raíz sin organizar | `especificacion_pivotradar_v8_sin_restricciones.md` → debería ir a `docs/`. `test_ml_export.csv` → fixture de test, una sola fila. |
+- **G-Metrics**: G1 (ATR compression), G2 (persistence), G3 (efficiency), G4 (exhaustion)
+- **Quality Metrics**: `calidad_sweep`, `calidad_mss`, `calidad_fvg`, `calidad_ob` (0–100)
+- **Trend Health**: `salud_tendencial` (EMA21/50 alignment + D1 trend)
+- **Confluences**: `conf_sweep_fvg`, `conf_completa` (multi-detector alignment)
+- **Conviction**: `BAJA`/`MEDIA`/`ALTA` (≥4 of: MSS aligned, equal HL, OB confluence, kill zone, conf_completa ≥60, contexto_estructural ≥70, max quality ≥70)
 
 ---
 
-## Reglas No Negociables
+## Binary Options Module (`kernel/binary/`)
 
-1. **Cero Look-ahead.** Cualquier dato que el `Contexto` le pase a una estrategia en el momento `t` no puede contener información de después de `t`. Test de referencia: recorrer todas las velas del backtest y comparar `df_h1.index.max() < tiempo_actual` (estrictamente menor, no `<=`).
+### Payout Tables (`payout.py`)
+- 5 brokers: Deriv, IQOption, Pocket, Quotex, Generic
+- 15+ symbols × 7 expiries (1m, 5m, 10m, 15m, 30m, 60m, EOD)
+- `get_payout_table(broker, symbol) → PayoutTable`
 
-2. **Ningún Test Se Considera Válido Sin Assert Sobre el Resultado.** Un test que solo verifica "no tira excepción" no prueba nada. Todo test de detección necesita un assert explícito sobre lo que se esperaba.
+### Risk Management (`risk.py`)
+| Mode | Behavior |
+|------|----------|
+| `FIXED` | Constant amount per trade |
+| `MARTINGALE` | ×2 after loss, reset on win (max steps configurable) |
+| `ANTI_MARTINGALE` | ×1.5 after win, reset on loss |
+| `KELLY` | Fractional Kelly (p×b−q)/b × fraction, min winrate/payout guards |
+| `PERCENTAGE` | % of current capital |
 
-3. **Ningún Doc de Estado Lleva Cifra Sin Comando Que La Produjo.** Si no se corrió, el doc dice "no verificado", no un número inventado.
+Global limits: `max_daily_loss_pct`, `max_daily_trades`, `max_concurrent_trades`, `max_total_exposure_pct`
 
-4. **No Agregar Gates Duros de Sesión/Spread/Volumen a la Estrategia PIVOT** — ver "radar puro" arriba.
-
-5. **`except: pass` Silencioso Prohibido en el Camino Crítico** (generación de señal → persistencia de resultado). Si algo puede fallar ahí, tiene que verse — como excepción o como log explícito, nunca en silencio.
+### Engine (`engine.py`)
+- `BinaryBacktestEngine`: Bar-by-bar replay, temporal expiry, fixed payout
+- Contract lifecycle: open → wait for expiry_timestamp → resolve (WIN/LOSS) → PnL
+- Risk manager integration per signal
+- Equity curve + binary-specific metrics (ROI%, payout_promedio, total_invertido)
 
 ---
 
-## Cómo Correr Esto
+## Backtesting Engine (`kernel/backtest.py`)
 
-### Backend
+- **Bar-by-bar replay** with strict temporal isolation
+- Multi-timeframe: M15 base + H1/H4/D1 derived via resample (precomputed once, cropped per bar)
+- **Zero look-ahead**: `searchsorted(side="left")` for higher TFs (only closed candles)
+- Position management: TP/SL/expiry, max concurrent trades, slippage, commission
+- Metrics: winrate, profit_factor, Sharpe/Sortino, max_drawdown, streaks, equity curve
+- ML dataset persistence: each closed trade → SQLite with detector combo, features, outcome
+
+---
+
+## API (`kernel/api/app.py`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | System status |
+| `/api/assets` | GET | Available instruments + real-time state |
+| `/api/strategies` | GET | Registered strategies |
+| `/api/strategies/{name}` | GET | Strategy details + params |
+| `/api/backtest` | POST | Run backtest (spot or binary) |
+| `/api/assets/{sym}/history` | GET | Historical candles |
+| `/api/assets/{sym}/signals` | GET | Recent signals |
+| `/ws` | WS | Real-time signal stream |
+
+---
+
+## Quick Start
+
 ```bash
+# Dependencies
 pip install -r requirements.txt --break-system-packages
-pip install "httpx<0.28" pytest pytest-cov --break-system-packages  # httpx>=0.28 rompe TestClient con starlette 0.36
+pip install "httpx<0.28" pytest pytest-cov --break-system-packages
 
-pytest tests/unit -v                      # rápido, ~15s
-pytest tests/integration -v               # más lento, incluye backtests reales sobre datos de 6 meses
+# Unit tests
+pytest tests/unit -v
 
-# Backtest manual sobre EURUSD
+# Integration tests
+pytest tests/integration -v
+
+# Manual backtest (spot)
 python test_pivot_backtest.py
-```
 
-### API Server (FastAPI + WebSocket)
-```bash
+# Binary backtest
+python -c "
+import json
+from kernel.binary.engine import run_binary_backtest
+from kernel.contrato import BinaryActivoInfo
+from estrategias.binary import PivotBinary
+from kernel.binary.risk import BinaryRiskConfig, BinaryRiskMode
+
+with open('activos/eurusd_binary.json') as f:
+    activo = BinaryActivoInfo(**json.load(f))
+
+resultado = run_binary_backtest(
+    estrategia=PivotBinary(),
+    activo=activo,
+    data_path='data/eurusd_m15.csv',
+    capital=10000.0,
+    risk_config=BinaryRiskConfig(mode=BinaryRiskMode.FIXED, fixed_amount=10.0)
+)
+print(f'Winrate: {resultado.winrate:.1f}% | ROI: {resultado.roi_pct:.2f}% | PF: {resultado.profit_factor:.2f}')
+"
+
+# API server
 python -m cli
-# → Swagger UI: http://localhost:8000/docs
-# → WebSocket: ws://localhost:8000/ws/signals
-# → API Assets: http://localhost:8000/api/assets
+# Swagger: http://localhost:8000/docs
+# WS: ws://localhost:8000/ws/signals
 ```
 
-### Frontend
-```bash
-cd frontend && npm install && npm run dev   # dev server
-cd frontend && npm run build                # build de producción
-```
+---
 
-### Exportar Dataset ML
+## ML Dataset Export
+
 ```bash
 python scripts/export_ml_dataset.py --symbol EURUSD --output ml_dataset.parquet
 ```
 
----
-
-## Símbolos y Estrategias Disponibles
-
-- **Activos configurados:** EURUSD, XAUUSD (`activos/*.json`)
-- **Estrategias registradas:**
-  - `PIVOT` — la principal, confluencia D0-D5, ~30 parámetros configurables
-  - `ema_cross` y `dummy` — referencia/testing, no para uso real
+Output: Parquet with 50+ features per trade (detector combo, qualities, G-metrics, confluences, regime, session, outcome).
 
 ---
 
-## Pipeline ML-Ready (Para Escalado con IA)
+## Testing
 
-El sistema ya genera un dataset estructurado por operación:
+```bash
+# Unit tests (70 tests, ~7s)
+pytest tests/unit -v
 
-```python
-# Cada operación guardada tiene:
-{
-    "timestamp_entrada": "...",
-    "timestamp_salida": "...",
-    "simbolo": "EURUSD",
-    "direccion": 1,
-    "detectores_activos": ["D2", "D3_DEF"],      # para feature engineering
-    "pnl_puntos": 12.5,
-    "razon_salida": "TP",
-    "fue_ganadora": true,
-    # + 100+ features implícitas en la señal original
-}
+# Integration tests (API + backtest, ~60s)
+pytest tests/integration -v
+
+# Specific test
+pytest tests/unit/test_binary.py -v
+pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 ```
 
-**Próximo paso natural:**
-1. `scripts/export_ml_dataset.py` → Parquet con 50+ features
-2. XGBoost/LightGBM + Optuna (walk-forward purged CV)
-3. Reemplazar scoring fijo → modelo calibrado (Platt/Isotonic)
-4. SHAP feature importance → podar detectores/umbrales inútiles
+**Coverage**: 70 unit tests + 22 integration tests. CI runs unit tests; integration tests require data files.
 
 ---
 
-## Frontend — Identidad Visual (PV-Terminal)
+## Known Issues
 
-El frontend sigue el sistema de diseño documentado en `SPEC_PV_TERMINAL.md` (paleta, tipografía IBM Plex, componentes `NavBar.tsx`/`DetectorReadout.tsx`). Regla dura: `signal-long`/`signal-short` (verde/rojo) se usan **exclusivamente** para dirección de mercado real, nunca como color decorativo de UI genérica.
+| Component | Issue | Severity |
+|-----------|-------|----------|
+| `kernel/backtest.py:_slice_tf()` | Look-ahead at exact hour/4h/day boundary (`side="right"` includes opening candle). Fix: `side="left"`. | Medium |
+| CI workflow | `pytest tests/integration \|\| true` masks integration failures. | Low |
+| Test organization | `test_pivot_backtest.py` in root, not under `tests/`. | Low |
+| Loose files | `especificacion_pivotradar_v8_sin_restricciones.md` should move to `docs/`. | Low |
 
 ---
 
-## Créditos y Licencia
+## Design Rules (Non-Negotiable)
 
-Diseño de detección: Martín (20 años exp. trading)  
-Implementación Python + arquitectura: Agentes de IA + Martín  
-Licencia: Propietario — no redistribuir sin autorización.
+1. **Zero Look-ahead**: `df_h1.index.max() < tiempo_actual` (strict) for all higher TFs
+2. **Tests Require Assertions**: No "no exception" tests; explicit outcome assertions
+3. **Metrics Require Commands**: No undocumented numbers in docs
+4. **Radar Pure**: Only D0–D5 detectors gate signals; session/spread/vol adjust confidence, never block
+5. **No Silent Failures**: Critical path (signal → persistence) must surface errors
+
+---
+
+## License
+
+Proprietary — internal use only. No redistribution without authorization.
