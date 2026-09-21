@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useStore } from '../store'
+import { useCallback } from 'react'
 
 const links = [
   { to: '/', label: 'HUB' },
@@ -29,6 +30,20 @@ export default function NavBar() {
   const derivConnected = useStore((s) => s.derivConnected)
   const soundsEnabled = useStore((s) => s.soundsEnabled)
   const setSoundsEnabled = useStore((s) => s.setSoundsEnabled)
+  const pushNotificationsEnabled = useStore((s) => s.pushNotificationsEnabled)
+  const setPushNotificationsEnabled = useStore((s) => s.setPushNotificationsEnabled)
+
+  const requestNotificationPermission = useCallback(() => {
+    if (typeof Notification === 'undefined') return
+    if (Notification.permission === 'granted') {
+      setPushNotificationsEnabled(true)
+      return
+    }
+    if (Notification.permission === 'denied') return
+    Notification.requestPermission().then((perm) => {
+      if (perm === 'granted') setPushNotificationsEnabled(true)
+    })
+  }, [setPushNotificationsEnabled])
 
   return (
     <nav className="bg-base-panel hairline-b px-3 h-11 flex items-center gap-1 font-condensed text-[13px] tracking-wide uppercase">
@@ -58,6 +73,15 @@ export default function NavBar() {
           title={soundsEnabled ? 'Desactivar sonidos' : 'Activar sonidos'}
         >
           {soundsEnabled ? '♪' : '✕'}
+        </button>
+        <button
+          onClick={requestNotificationPermission}
+          className={`w-7 h-7 flex items-center justify-center border transition-colors ${
+            pushNotificationsEnabled ? 'border-brand-cyan/50 text-brand-cyan' : 'border-base-line text-text-muted hover:text-text-secondary'
+          }`}
+          title={pushNotificationsEnabled ? 'Notificaciones activas' : 'Activar notificaciones del navegador'}
+        >
+          {pushNotificationsEnabled ? '🔔' : '🔕'}
         </button>
         <div className="flex items-center gap-1.5 pl-3 border-l border-base-line h-full">
           <div className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />

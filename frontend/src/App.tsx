@@ -70,20 +70,9 @@ function App() {
     }
   }, [soundsEnabled, soundQueue, clearSoundQueue])
 
-  // Solicitar permiso de notificaciones push al montar
+  // Sincronizar estado de notificaciones con permiso existente
   useEffect(() => {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      const denied = localStorage.getItem('notifications_denied')
-      if (!denied) {
-        Notification.requestPermission().then((perm) => {
-          if (perm === 'granted') {
-            setPushNotificationsEnabled(true)
-          } else if (perm === 'denied') {
-            localStorage.setItem('notifications_denied', 'true')
-          }
-        })
-      }
-    } else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       setPushNotificationsEnabled(true)
     }
   }, [setPushNotificationsEnabled])
