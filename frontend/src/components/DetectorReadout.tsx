@@ -6,7 +6,7 @@ interface DetectorReadoutProps {
 const DETECTORES = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5'] as const
 
 const NOMBRES: Record<string, string> = {
-  D0: 'ESTRUCTURA', D1: 'TENDENCIA', D2: 'SWEEP', D3: 'FVG', D4: 'ORDER BLOCK', D5: 'MSS',
+  D0: 'ESTRUCTURA', D1: 'RUPTURA', D2: 'SWEEP', D3: 'FVG', D4: 'ORDER BLOCK', D5: 'MSS',
 }
 
 export default function DetectorReadout({ activos, clasificacion = {} }: DetectorReadoutProps) {
