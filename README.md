@@ -43,7 +43,6 @@ pivot/
 │   ├── activos_loader.py    # JSON → ActivoInfo loader
 │   ├── backtest.py          # BacktestEngine (bar-by-bar, no look-ahead)
 │   ├── storage.py           # SQLite persistence (ops, ML dataset, config)
-│   ├── runtime.py           # Live orchestration
 │   ├── feeds/
 │   │   ├── csv.py           # CSVFeed, MultiTimeframeFeed
 │   │   ├── csv_resample.py  # H1/H4/D1 derivation from M15
@@ -63,9 +62,9 @@ pivot/
 │   ├── unit/                # 70 unit tests
 │   └── integration/         # API + backtest integration tests
 ├── scripts/
-│   ├── export_ml_dataset.py # ML dataset export (Parquet)
+│   ├── export_ml_dataset.py # ML dataset export (CSV/Parquet)
 │   └── run_deriv_ws.py      # Live WebSocket runner
-├── docker-compose.yml       # 3 services (API, WS, Frontend)
+├── docker-compose.yml       # 2 services (API, Frontend)
 ├── Dockerfile               # Multi-stage, non-root user
 └── requirements.txt
 ```
@@ -186,8 +185,8 @@ Global limits: `max_daily_loss_pct`, `max_daily_trades`, `max_concurrent_trades`
 
 ```bash
 # Dependencies
-pip install -r requirements.txt --break-system-packages
-pip install "httpx<0.28" pytest pytest-cov --break-system-packages
+pip install -r requirements.txt
+pip install pytest pytest-cov
 
 # Unit tests
 pytest tests/unit -v
@@ -222,7 +221,7 @@ print(f'Winrate: {resultado.winrate:.1f}% | ROI: {resultado.roi_pct:.2f}% | PF: 
 # API server
 python -m cli
 # Swagger: http://localhost:8000/docs
-# WS: ws://localhost:8000/ws/signals
+# WS: ws://localhost:8000/ws
 ```
 
 ---
@@ -259,7 +258,6 @@ pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 
 | Component | Issue | Severity |
 |-----------|-------|----------|
-| `test_pivot_backtest.py` in root | Orphaned script; imports nonexistent `generar_datos_prueba`. | Low |
 | Loose files | `especificacion_pivotradar_v8_sin_restricciones.md` should move to `docs/`. | Low |
 
 ---
@@ -276,4 +274,4 @@ pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 
 ## License
 
-Proprietary — internal use only. No redistribution without authorization.
+Proprietary — no `LICENSE` file in repo. Internal use only. No redistribution without authorization.
