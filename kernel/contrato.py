@@ -86,7 +86,8 @@ class ActivoInfo:
             try:
                 from zoneinfo import ZoneInfo
                 self.timezone = ZoneInfo(self.timezone)
-            except ImportError:
+            except (ImportError, KeyError):
+                # ImportError: zoneinfo no disponible; KeyError: ZoneInfoNotFoundError
                 self.timezone = timezone.utc
 
 

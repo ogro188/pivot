@@ -5,6 +5,7 @@ PivotRadar Hybrid v8.0 — Motor Orquestador
 Arquitectura plugin: detectores independientes + scoring cruzado + narrativa + persistencia.
 Lógica de detección idéntica a v7.9. Solo cambia la estructura interna.
 """
+import logging
 import math
 import os
 import time
@@ -14,6 +15,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Tuple, Optional, Set
+
+logger = logging.getLogger(__name__)
 
 from core.estructuras import EstructuraRef, Signal, DetectorLatch, MSSCache, ZonaCache
 from core import (
@@ -197,8 +200,8 @@ class PivotRadarEngine:
                 sig.csv_written = True
                 self.g_pending_signals.append(sig)
                 self.g_pending_ids.add(sid)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error restaurando señal pendiente {p}: {e}")
 
         print("=== PivotRadar Hybrid v8.0 Python ===")
         print(f"Símbolo: {self.symbol} | Timeframe: M15")

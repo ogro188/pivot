@@ -148,8 +148,8 @@ class AssetDerivStream:
         if self.feed:
             try:
                 self.feed.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[{self.simbolo}] Error deteniendo feed: {e}")
         if self._task:
             self._task.cancel()
             try:
@@ -327,7 +327,8 @@ class AssetDerivStream:
             return base
         try:
             reciente = resamplear_ohlc(df_m15, tf)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error resampleando {tf} para contexto superior: {e}")
             return base
         if reciente is None or reciente.empty:
             return base
@@ -474,8 +475,8 @@ class DerivRuntime:
                 fc = data.get("fuente_config") or {}
                 if fc.get("instrumento"):
                     return fc["instrumento"]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Error leyendo fuente_config de {path}, usando frx{simbolo}: {e}")
         return f"frx{simbolo}"
 
     def _config_para(self, simbolo: str) -> DerivConfig:

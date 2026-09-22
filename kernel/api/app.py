@@ -23,8 +23,8 @@ try:
         load_dotenv(_ENV_PATH)
     else:
         load_dotenv()
-except Exception:
-    pass
+except Exception as _env_err:
+    logging.getLogger(__name__).warning(f"No se pudo cargar .env: {_env_err}")
 
 # Agregar el root del workspace al path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -82,7 +82,8 @@ def _iso_a_ms(value) -> int:
     try:
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         return int(dt.timestamp() * 1000)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Timestamp inválido '{value}', usando ahora: {e}")
         return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
@@ -154,7 +155,8 @@ def _cargar_velas_deriv(simbolo: str, tf: str, count: int) -> Optional[List[Dict
     if tf.upper() != "M15":
         try:
             df = resamplear_ohlc(df, tf.upper())
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error resampleando velas Deriv a {tf}: {e}")
             return None
     return _df_a_velas(df, count)
 
@@ -206,7 +208,8 @@ async def _contar_senales_hoy(simbolo: str) -> int:
             (simbolo, hoy),
         )
         return int(rows[0]["n"]) if rows else 0
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error contando señales de {simbolo}: {e}")
         return 0
 
 
@@ -231,8 +234,8 @@ async def _replay_asset(simbolo: str, params: dict | None = None):
                 "cat": "PIVOT",
                 "msg": mensaje,
             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Error persistiendo log de estrategia: {e}")
 
     try:
         activo = cargar_activo(simbolo)
@@ -316,7 +319,7 @@ async def _replay_asset(simbolo: str, params: dict | None = None):
                         )
                         await asyncio.to_thread(ntfy_enviar, activo.simbolo, texto, ntfy_cfg)
                 except Exception as e:
-                    logger.debug(f"ntfy no enviado en replay: {e}")
+                    logger.warning(f"ntfy no enviado en replay: {e}")
 
             await asyncio.sleep(0.15)
 
@@ -351,7 +354,8 @@ async def _iniciar_deriv():
             try:
                 with open(path_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            except Exception:
+            except Exception as e:
+                logger.error(f"JSON de activo corrupto ({path_json}), excluido del runtime Deriv: {e}")
                 continue
             if (data.get("fuente_tipo") or "").lower() != "deriv":
                 continue
@@ -380,8 +384,8 @@ async def _lifespan(app: FastAPI):
     if _DERIV_RUNTIME:
         try:
             await _DERIV_RUNTIME.stop()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Error deteniendo runtime Deriv: {e}")
 
 
 def create_app() -> FastAPI:
@@ -471,7 +475,8 @@ def create_app() -> FastAPI:
                 try:
                     with open(path_json, "r", encoding="utf-8") as f:
                         extra = json.load(f)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"JSON de activo corrupto ({path_json}): {e}")
                     extra = {}
 
             running = _RUNNING.get(activo.simbolo, False)
@@ -489,7 +494,9 @@ def create_app() -> FastAPI:
             price = None
             if deriv_stream and deriv_stream.price is not None:
                 price = deriv_stream.price
-            elif price is None:
+            elif precio is not None:
+                price = precio
+            else:
                 # Preferir datos reales sobre el CSV de prueba sintético
                 path_real = f"data/{simbolo.lower()}_m15_real.csv"
                 path_m15 = f"data/{simbolo.lower()}_m15.csv"
@@ -497,7 +504,8 @@ def create_app() -> FastAPI:
                 try:
                     feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)
                     price = float(feed.df["close"].iloc[-1])
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"No se pudo leer precio de {path_csv}: {e}")
                     price = None
 
             from kernel.ntfy import cargar_config_activo

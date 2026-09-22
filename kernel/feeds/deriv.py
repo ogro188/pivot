@@ -241,7 +241,8 @@ class DerivFeed:
             except asyncio.TimeoutError:
                 try:
                     await self.ws.ping()
-                except:
+                except Exception as e:
+                    logger.warning(f"Ping falló, reconectando: {e}")
                     self.ws = None
             except websockets.ConnectionClosed:
                 logger.warning("Conexión cerrada, reconectando...")

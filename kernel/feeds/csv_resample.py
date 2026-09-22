@@ -3,8 +3,11 @@
 Utilidades de resampling para generar timeframes mayores desde M15.
 Solución al bug 8.1: permite derivar H1/H4/D1 automáticamente.
 """
+import logging
 import pandas as pd
 from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 def resamplear_ohlc(df_base: pd.DataFrame, timeframe_destino: str) -> pd.DataFrame:
     """
@@ -64,6 +67,6 @@ def generar_timeframes_desde_m15(
         try:
             resultados[tf] = resamplear_ohlc(df_m15, tf)
         except Exception as e:
-            print(f"Error generando {tf}: {e}")
+            logger.error(f"Error generando {tf}: {e}")
     
     return resultados

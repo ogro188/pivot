@@ -3,11 +3,14 @@
 Adaptador para integrar los detectores del Core (D0-D5) con el Kernel.
 Permite usar la lógica existente de detectores en el nuevo sistema de backtesting.
 """
+import logging
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from copy import deepcopy
+
+logger = logging.getLogger(__name__)
 
 # Importar tipos del kernel
 from kernel.contrato import Contexto as KernelContexto, ActivoInfo
@@ -128,6 +131,7 @@ class CoreAdapter:
                         "nombre": detector.nombre,
                     }
             except Exception as e:
+                logger.error(f"Detector {detector.nombre} falló: {e}", exc_info=True)
                 resultados[detector.nombre] = {"error": str(e)}
         
         return resultados

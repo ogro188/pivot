@@ -3,10 +3,13 @@
 Kernel de PIVOT - Feed de datos CSV para backtesting.
 Permite cargar datos históricos desde archivos CSV y generar velas para el motor de backtest.
 """
+import logging
 import pandas as pd
 from datetime import datetime, timezone
 from typing import Iterator, Optional, Dict, List, Any
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class CSVFeed:
@@ -138,8 +141,9 @@ class CSVFeed:
             # Intentar parsear ISO format
             try:
                 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-            except Exception:
+            except Exception as e:
                 # Asumir Unix timestamp en segundos
+                logger.warning(f"Parse ISO falló, reintentando como Unix seconds: {e}")
                 df["timestamp"] = pd.to_datetime(df["timestamp"].astype(float), unit="s", utc=True)
         
         # Convertir a timezone especificada

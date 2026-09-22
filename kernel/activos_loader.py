@@ -3,10 +3,13 @@ Loader de configuración de activos desde JSON.
 Traduce archivos de configuración a dataclass ActivoInfo.
 """
 import json
+import logging
 import os
 from datetime import timezone
 from typing import List, Optional
 from kernel.contrato import ActivoInfo
+
+logger = logging.getLogger(__name__)
 
 
 def cargar_activo(simbolo: str, activos_dir: str = "activos") -> ActivoInfo:
@@ -85,18 +88,18 @@ def validar_configuracion_activo(path: str) -> bool:
         required_fields = ["simbolo", "point"]
         for field in required_fields:
             if field not in data:
-                print(f"❌ Campo requerido '{field}' faltante en {path}")
+                logger.error(f"Campo requerido '{field}' faltante en {path}")
                 return False
         
         if not isinstance(data["point"], (int, float)) or data["point"] <= 0:
-            print(f"❌ Campo 'point' debe ser numérico positivo en {path}")
+            logger.error(f"Campo 'point' debe ser numérico positivo en {path}")
             return False
             
         return True
         
     except json.JSONDecodeError as e:
-        print(f"❌ JSON inválido en {path}: {e}")
+        logger.error(f"JSON inválido en {path}: {e}")
         return False
     except Exception as e:
-        print(f"❌ Error leyendo {path}: {e}")
+        logger.error(f"Error leyendo {path}: {e}")
         return False

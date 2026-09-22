@@ -4,9 +4,12 @@ Estrategia PIVOT - Estrategia principal basada en detectores D0-D5.
 Sin restricciones: cada detector que dispare genera su propia señal independiente.
 El sistema es un asistente. El operador decide. Los detectores informan, no bloquean.
 """
+import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 from kernel.contrato import Estrategia, Contexto, Señal, ActivoInfo, Overlay
 from kernel.core_adapter import (
@@ -232,7 +235,8 @@ class EstrategiaPivot(Estrategia):
                 symbol=activo.simbolo if activo else "EURUSD",
                 ntfy_topic=params.get("ntfy_topic", "pivot_alerts")
             )
-        except Exception:
+        except Exception as e:
+            logger.error(f"AlertasEngine no disponible, alertas desactivadas: {e}", exc_info=True)
             self.alertas = None
 
     def detectar(self, ctx: Contexto) -> List[Señal]:
@@ -257,7 +261,7 @@ class EstrategiaPivot(Estrategia):
         try:
             core_ctx = self.adapter.adaptar_contexto(ctx)
         except Exception as e:
-            print(f"[PIVOT] Error adaptando contexto: {e}")
+            logger.error(f"[PIVOT] Error adaptando contexto: {e}", exc_info=True)
             return []
 
         # 3. Aplicar parámetros al contexto del core
@@ -276,6 +280,8 @@ class EstrategiaPivot(Estrategia):
         # Recolectar las señales reales devueltas por los detectores
         candidatas = []
         for det_nombre, res in resultados.items():
+            if isinstance(res, dict) and "error" in res:
+                logger.error(f"Detector {det_nombre} devolvió error: {res['error']}")
             if isinstance(res, dict) and "senal" in res:
                 candidatas.append(res["senal"])
 
@@ -294,8 +300,8 @@ class EstrategiaPivot(Estrategia):
             for sig in candidatas:
                 try:
                     self.alertas.queue_alert(self.alertas.build_alert_text(sig))
-                except Exception:
-                    pass  # No romper el flujo si alertas falla
+                except Exception as e:
+                    logger.error(f"Error encolando alerta: {e}", exc_info=True)
 
         return señales
 
@@ -512,8 +518,8 @@ class EstrategiaPivot(Estrategia):
                     direccion = fila[1]
                     resultado = fila[2] == 1
                     self.scorer.registrar_resultado(detectores, direccion, resultado)
-        except Exception:
-            pass  # Si no hay datos, empezar fresco
+        except Exception as e:
+            logger.warning(f"No se pudo cargar historial de scoring (se empieza fresco): {e}")
 
     def on_backtest_tick(self, ctx: Contexto, operacion_abierta: bool) -> List[Señal]:
         """Hook especial para backtesting (opcional)."""

@@ -2,11 +2,14 @@
 # -*- coding: utf-8 -*-
 """Alertas: NTFY, cola, deduplicación, cooldown."""
 import hashlib
+import logging
 import math
 import requests
 from datetime import datetime
 from typing import List
 from core.estructuras import Signal, AlertEntry
+
+logger = logging.getLogger(__name__)
 
 
 class AlertasEngine:
@@ -107,8 +110,10 @@ class AlertasEngine:
             if resp.status_code == 200:
                 self.g_last_ntfy_time = datetime.now()
                 return True
+            logger.warning(f"ntfy HTTP {resp.status_code} para topic {self.ntfy_topic}")
             return False
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error enviando ntfy: {e}")
             return False
 
     def queue_alert(self, text: str):
@@ -137,12 +142,12 @@ class AlertasEngine:
                 keep.append(alert)
                 continue
             if self.send_ntfy_message(alert.text):
-                print("Alerta encolada enviada")
+                logger.info("Alerta encolada enviada")
             else:
                 alert.retry_count += 1
                 alert.last_retry = now
                 if alert.retry_count >= 3:
-                    print("Alerta descartada")
+                    logger.error(f"Alerta descartada tras {alert.retry_count} reintentos: {alert.text[:80]}")
                 else:
                     keep.append(alert)
         self.g_alert_queue = keep

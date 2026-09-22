@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """Utilidades ntfy: config por activo, envío de mensajes y prueba de conexión."""
 import json
+import logging
 import os
 import requests
 from datetime import datetime
 from typing import Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SERVER = "https://ntfy.sh"
 
@@ -18,14 +21,18 @@ def cargar_config_activo(simbolo: str) -> Dict[str, str]:
             with open(path_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
             ntfy = data.get("ntfy") or {}
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error leyendo config ntfy de {path_json}: {e}")
             ntfy = {}
     if not ntfy.get("topic"):
         try:
             with open("data/ntfy_config.json", "r", encoding="utf-8") as f:
                 g = json.load(f)
             ntfy = {"topic": g.get("topic", ""), "server": g.get("server", DEFAULT_SERVER)}
-        except Exception:
+        except FileNotFoundError:
+            ntfy = {}
+        except Exception as e:
+            logger.error(f"Error leyendo data/ntfy_config.json: {e}")
             ntfy = {}
     if not ntfy.get("server"):
         ntfy["server"] = DEFAULT_SERVER
@@ -40,7 +47,8 @@ def guardar_config_activo(simbolo: str, topic: str, server: str) -> None:
         try:
             with open(path_json, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except Exception as e:
+            logger.error(f"JSON corrupto en {path_json}, se reescribe solo con ntfy: {e}")
             data = {}
     data["ntfy"] = {"topic": topic, "server": server or DEFAULT_SERVER}
     with open(path_json, "w", encoding="utf-8") as f:
