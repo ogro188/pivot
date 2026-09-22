@@ -2,13 +2,18 @@
 # -*- coding: utf-8 -*-
 """Estructuras de datos compartidas (antes estaban en motor.py)."""
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Tuple, Optional, Set
+
+
+def _utc_epoch() -> datetime:
+    """Epoch timezone-aware: coherente con índices datetime64[UTC]."""
+    return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 @dataclass
 class EstructuraRef:
-    timestamp: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    timestamp: datetime = field(default_factory=_utc_epoch)
     swing_high: float = 0.0
     swing_low: float = 0.0
     swing_high_ant: float = 0.0
@@ -25,7 +30,7 @@ class EstructuraRef:
 @dataclass
 class Signal:
     id: int = 0
-    entry_time: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    entry_time: datetime = field(default_factory=_utc_epoch)
     entry_bar_shift: int = -1
     symbol: str = ""
     direction: int = 0
@@ -137,15 +142,15 @@ class Signal:
 class AlertEntry:
     text: str = ""
     retry_count: int = 0
-    last_retry: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
-    created_at: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    last_retry: datetime = field(default_factory=_utc_epoch)
+    created_at: datetime = field(default_factory=_utc_epoch)
     content_hash: str = ""
 
 
 @dataclass
 class MSSCache:
     valid: bool = False
-    calc_time: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    calc_time: datetime = field(default_factory=_utc_epoch)
     bars_ago: int = 0
     dir: str = ""
     level: float = 0.0
@@ -154,12 +159,12 @@ class MSSCache:
 @dataclass
 class ZonaCache:
     valid: bool = False
-    calc_time: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    calc_time: datetime = field(default_factory=_utc_epoch)
     mid: float = 0.0
 
 
 @dataclass
 class DetectorLatch:
-    last_signal_bar: datetime = field(default_factory=lambda: datetime(1970, 1, 1))
+    last_signal_bar: datetime = field(default_factory=_utc_epoch)
     last_pattern_key: str = ""
     has_fired_this_bar: bool = False

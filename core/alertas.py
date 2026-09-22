@@ -5,11 +5,15 @@ import hashlib
 import logging
 import math
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from core.estructuras import Signal, AlertEntry
 
 logger = logging.getLogger(__name__)
+
+
+def _now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AlertasEngine:
@@ -19,8 +23,8 @@ class AlertasEngine:
         self.ntfy_server = ntfy_server.rstrip("/")
         self.symbol = symbol
         self.point = point
-        self.g_last_alert_time = datetime(1970, 1, 1)
-        self.g_last_ntfy_time = datetime(1970, 1, 1)
+        self.g_last_alert_time = _now_utc()
+        self.g_last_ntfy_time = _now_utc().replace(microsecond=0)  # epoch aware
         self.g_alert_queue: List[AlertEntry] = []
         self.MAX_ALERT_QUEUE = 50
 
@@ -101,14 +105,14 @@ class AlertasEngine:
     def send_ntfy_message(self, text: str) -> bool:
         if not self.ntfy_topic:
             return False
-        if (datetime.now() - self.g_last_ntfy_time).total_seconds() < 5:
+        if (datetime.now(timezone.utc) - self.g_last_ntfy_time).total_seconds() < 5:
             return False
         url = f"{self.ntfy_server}/{self.ntfy_topic}"
         headers = {"Content-Type": "text/plain"}
         try:
             resp = requests.post(url, data=text.encode("utf-8"), headers=headers, timeout=3)
             if resp.status_code == 200:
-                self.g_last_ntfy_time = datetime.now()
+                self.g_last_ntfy_time = datetime.now(timezone.utc)
                 return True
             logger.warning(f"ntfy HTTP {resp.status_code} para topic {self.ntfy_topic}")
             return False
@@ -127,14 +131,14 @@ class AlertasEngine:
         entry.text = text
         entry.content_hash = hash_val
         entry.retry_count = 0
-        entry.last_retry = datetime(1970, 1, 1)
-        entry.created_at = datetime.now()
+        entry.last_retry = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        entry.created_at = datetime.now(timezone.utc)
         self.g_alert_queue.append(entry)
 
     def process_alert_queue(self):
         if not self.g_alert_queue:
             return
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         keep = []
         for alert in self.g_alert_queue:
             backoff = (2 ** min(alert.retry_count, 6)) * 5

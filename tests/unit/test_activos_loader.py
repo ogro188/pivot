@@ -73,6 +73,14 @@ class TestListarActivos:
         assert "XAUUSD" in activos
         assert len(activos) >= 2
 
+    def test_excluye_configs_binary(self, tmp_path):
+        """Los JSON *_binary.json no son activos del hub."""
+        (tmp_path / "eurusd.json").write_text("{}")
+        (tmp_path / "eurusd_binary.json").write_text("{}")
+        activos = listar_activos_disponibles(str(tmp_path))
+        assert "EURUSD" in activos
+        assert "EURUSD_BINARY" not in activos
+
     def test_retorna_lista_vacia_si_directorio_no_existe(self):
         """Verifica comportamiento con directorio inexistente."""
         activos = listar_activos_disponibles("/no/existe")

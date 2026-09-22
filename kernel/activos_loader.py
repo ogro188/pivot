@@ -67,9 +67,9 @@ def listar_activos_disponibles(activos_dir: str = "activos") -> List[str]:
         return []
     
     return [
-        f.replace(".json", "").upper() 
-        for f in os.listdir(activos_dir) 
-        if f.endswith(".json")
+        f.replace(".json", "").upper()
+        for f in os.listdir(activos_dir)
+        if f.endswith(".json") and not f.lower().endswith("_binary.json")
     ]
 
 

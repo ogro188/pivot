@@ -131,11 +131,11 @@ class PivotRadarEngine:
         os.makedirs(self.data_dir, exist_ok=True)
 
         # Estado
-        self.g_last_bar_time = datetime(1970, 1, 1)
+        self.g_last_bar_time = self._epoch()
         self.g_pending_signals: List[Signal] = []
         self.g_pending_ids: Set[int] = set()
         self.g_copybuffer_fail_count = 0
-        self.g_last_volume_calc_time = datetime(1970, 1, 1)
+        self.g_last_volume_calc_time = self._epoch()
         self.g_cached_volume_ratio = 1.0
         self.g_cached_volume_bar_shift = -1
         self.g_cached_volume_lookback = -1
@@ -145,10 +145,10 @@ class PivotRadarEngine:
         self.g_detector_latch = [DetectorLatch() for _ in range(7)]
         self.g_g1 = 0.0; self.g_g2 = 0.0; self.g_g3 = 0.0; self.g_g4 = 0.0
         self.g_estructura = EstructuraRef()
-        self.g_last_struct_update = datetime(1970, 1, 1)
+        self.g_last_struct_update = self._epoch()
         self.g_mss_cache = MSSCache()
         self.g_zona_cache = ZonaCache()
-        self.g_last_g_calc_bar = datetime(1970, 1, 1)
+        self.g_last_g_calc_bar = self._epoch()
 
         # DataFrames
         self.df_m15 = self.df_h1 = self.df_h4 = self.df_d1 = None
@@ -182,21 +182,34 @@ class PivotRadarEngine:
         ]
 
         # Cargar pending desde SQLite en lugar de CSV - Migración G12
+        # cargar_cola_pendientes retorna (dict signal_id->fila, set de ids)
         import asyncio
         loop = asyncio.new_event_loop()
-        pending_dicts, pending_ids = loop.run_until_complete(self.db.cargar_cola_pendientes())
+        pending_map, pending_ids = loop.run_until_complete(self.db.cargar_cola_pendientes())
         loop.close()
 
         self.g_pending_signals = []
         self.g_pending_ids = set()
-        for p in pending_dicts:
+        rows = pending_map.values() if isinstance(pending_map, dict) else pending_map
+        for p in rows:
             try:
-                sid = int(p['signal_id']) if p.get('signal_id') else 0
+                raw_id = p.get('signal_id')
+                sid = int(raw_id) if raw_id not in (None, '') else 0
                 sig = Signal()
                 sig.id = sid
                 sig.symbol = p.get('symbol', self.symbol)
                 sig.detector = p.get('detector', '')
-                sig.entry_time = datetime.fromisoformat(p['entry_time']) if p.get('entry_time') else datetime(1970, 1, 1)
+                entry_raw = p.get('entry_time') or p.get('created_at')
+                if entry_raw:
+                    try:
+                        et = datetime.fromisoformat(str(entry_raw))
+                    except ValueError:
+                        et = None
+                else:
+                    et = None
+                if et is None or et.tzinfo is None:
+                    et = (et or datetime(1970, 1, 1)).replace(tzinfo=timezone.utc)
+                sig.entry_time = et
                 sig.csv_written = True
                 self.g_pending_signals.append(sig)
                 self.g_pending_ids.add(sid)
@@ -303,7 +316,7 @@ class PivotRadarEngine:
             and self.g_cached_volume_lookback == n_lookback
         )
         if bar_shift == 0 and valid:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             if self.g_last_volume_calc_time is not None and (now - self.g_last_volume_calc_time).total_seconds() > 1:
                 valid = False
         if valid:
@@ -413,9 +426,14 @@ class PivotRadarEngine:
         col = "tick_volume" if "tick_volume" in df.columns else "volume"
         return int(row[col])
 
+    @staticmethod
+    def _epoch() -> datetime:
+        """Epoch timezone-aware, coherente con índices datetime64[UTC]."""
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
     def _i_time(self, df: pd.DataFrame, shift: int) -> datetime:
         if df is None or shift < 0 or shift >= len(df):
-            return datetime(1970, 1, 1)
+            return self._epoch()
         t = df.index[-(shift + 1)]
         if isinstance(t, pd.Timestamp):
             return t.to_pydatetime()
@@ -425,6 +443,8 @@ class PivotRadarEngine:
         if df is None:
             return -1
         idx = df.index
+        if target_time is not None and isinstance(idx, pd.DatetimeIndex) and getattr(idx.dtype, "tz", None) is not None and getattr(target_time, "tzinfo", None) is None:
+            target_time = target_time.replace(tzinfo=idx.dtype.tz)
         if exact:
             matches = idx[idx == target_time]
             if len(matches) > 0:
@@ -443,7 +463,7 @@ class PivotRadarEngine:
     @staticmethod
     def build_signal_id(bar_time: datetime, detector: str, direction: int, key_level: float) -> int:
         if bar_time is None or bar_time.year < 2000:
-            bar_time = datetime(1970, 1, 1)
+            bar_time = datetime(1970, 1, 1, tzinfo=timezone.utc)
         ts = int(bar_time.timestamp())
         raw = f"{ts}|{detector}|{direction}|{key_level:.10f}"
         # Máscara para mantener el id dentro del rango signed de SQLite INTEGER
@@ -643,13 +663,13 @@ class PivotRadarEngine:
             self.g_last_g_calc_bar = current_bar
 
         # Actualizar estructura D0
-        current_h1_bar = self._i_time(self.df_h1, 0) if self.df_h1 is not None else datetime(1970, 1, 1)
+        current_h1_bar = self._i_time(self.df_h1, 0) if self.df_h1 is not None else self._epoch()
         if current_h1_bar != self.g_last_struct_update or self.g_estructura.timestamp.year < 2000:
             ctx_temp = self._build_contexto(session, kill_zone, trend_d1, regimen_vol)
             self.g_estructura = EstructuraProvider(ctx_temp).actualizar()
             self.g_last_struct_update = current_h1_bar
 
-        current_h4_bar = self._i_time(self.df_h4, 0) if self.df_h4 is not None else datetime(1970, 1, 1)
+        current_h4_bar = self._i_time(self.df_h4, 0) if self.df_h4 is not None else self._epoch()
         if self.g_mss_cache.calc_time != current_h4_bar:
             self.g_mss_cache.valid = False
         self.g_zona_cache.valid = False
@@ -950,7 +970,7 @@ class PivotRadarEngine:
             loop.close()
 
         msg = self.alertas.build_alert_text(sig)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         if (now - self.alertas.g_last_ntfy_time).total_seconds() > 5:
             if self.alertas.send_ntfy_message(msg):
                 self.alertas.g_last_alert_time = now

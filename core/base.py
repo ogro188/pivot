@@ -167,7 +167,7 @@ class Contexto:
 
     def _i_time(self, df: pd.DataFrame, shift: int) -> datetime:
         if df is None or shift < 0 or shift >= len(df):
-            return datetime(1970, 1, 1)
+            return datetime(1970, 1, 1, tzinfo=timezone.utc)
         cache = self._col_cache(df)
         if cache is not None:
             t = cache["index"][-(shift + 1)]

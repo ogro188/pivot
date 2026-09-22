@@ -498,8 +498,10 @@ def create_app() -> FastAPI:
                 price = precio
             else:
                 # Preferir datos reales sobre el CSV de prueba sintético
-                path_real = f"data/{simbolo.lower()}_m15_real.csv"
-                path_m15 = f"data/{simbolo.lower()}_m15.csv"
+                # Usar activo.simbolo (no el nombre del JSON) para no pedir e.g. eurusd_binary_m15.csv
+                base = activo.simbolo.lower()
+                path_real = f"data/{base}_m15_real.csv"
+                path_m15 = f"data/{base}_m15.csv"
                 path_csv = path_real if os.path.exists(path_real) else path_m15
                 try:
                     feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)

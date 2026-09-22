@@ -501,7 +501,7 @@ class EstrategiaPivot(Estrategia):
             from kernel.storage import get_database
             db = get_database()
             with db._lock:
-                cursor = db.conn.execute(
+                cursor = db._conn.execute(
                     "SELECT detectores_activos, direccion, fue_ganadora FROM signals_ml_dataset WHERE fue_ganadora IS NOT NULL LIMIT 500"
                 )
                 filas = cursor.fetchall()
