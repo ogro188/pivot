@@ -1,3 +1,5 @@
+import { SIGNAL_LONG, SIGNAL_SHORT } from './src/theme'
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
@@ -6,7 +8,7 @@ export default {
       colors: {
         base: { bg: '#0B0E14', panel: '#141922', panel2: '#191F2A', line: '#232936' },
         text: { primary: '#E4E7EC', secondary: '#7A8699', muted: '#4B5563' },
-        signal: { long: '#2FBF71', short: '#D64550' },
+        signal: { long: SIGNAL_LONG, short: SIGNAL_SHORT },
         brand: { cyan: '#37E0C4' },
       },
       fontFamily: {

@@ -163,8 +163,8 @@ export default function ActivoPage() {
             {t}
           </button>
         ))}
-        <label className="flex items-center gap-1 font-condensed text-[11px] text-text-secondary uppercase tracking-widest">
-          <input type="checkbox" checked={multiTf} onChange={(e) => setMultiTf(e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
+        <label htmlFor="multi-tf" className="flex items-center gap-1 font-condensed text-[11px] text-text-secondary uppercase tracking-widest">
+          <input id="multi-tf" type="checkbox" checked={multiTf} onChange={(e) => setMultiTf(e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
           Multi-TF
         </label>
       </div>
@@ -214,32 +214,32 @@ export default function ActivoPage() {
             <div className="mt-2 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Confianza mínima</label>
-                  <input type="number" min="0" max="100" step="1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.confianza_minima} onChange={(e) => handleParamChange('confianza_minima', parseInt(e.target.value))} />
+                  <label htmlFor="strat-confianza_minima" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Confianza mínima</label>
+                  <input id="strat-confianza_minima" type="number" min="0" max="100" step="1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.confianza_minima} onChange={(e) => handleParamChange('confianza_minima', parseInt(e.target.value))} />
                 </div>
                 <div>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Reward ratio mínimo</label>
-                  <input type="number" min="0.5" max="5" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.reward_ratio_min} onChange={(e) => handleParamChange('reward_ratio_min', parseFloat(e.target.value))} />
+                  <label htmlFor="strat-reward_ratio_min" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Reward ratio mínimo</label>
+                  <input id="strat-reward_ratio_min" type="number" min="0.5" max="5" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.reward_ratio_min} onChange={(e) => handleParamChange('reward_ratio_min', parseFloat(e.target.value))} />
                 </div>
                 <div>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Risk % por operación</label>
-                  <input type="number" min="0.1" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.risk_por_operacion} onChange={(e) => handleParamChange('risk_por_operacion', parseFloat(e.target.value))} />
+                  <label htmlFor="strat-risk_por_operacion" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Risk % por operación</label>
+                  <input id="strat-risk_por_operacion" type="number" min="0.1" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.risk_por_operacion} onChange={(e) => handleParamChange('risk_por_operacion', parseFloat(e.target.value))} />
                 </div>
                 <div>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Slippage (pips)</label>
-                  <input type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.slippage_pips} onChange={(e) => handleParamChange('slippage_pips', parseFloat(e.target.value))} />
+                  <label htmlFor="strat-slippage_pips" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Slippage (pips)</label>
+                  <input id="strat-slippage_pips" type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.slippage_pips} onChange={(e) => handleParamChange('slippage_pips', parseFloat(e.target.value))} />
                 </div>
                 <div>
-                  <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Comisión por lote</label>
-                  <input type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.comision_lote} onChange={(e) => handleParamChange('comision_lote', parseFloat(e.target.value))} />
+                  <label htmlFor="strat-comision_lote" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Comisión por lote</label>
+                  <input id="strat-comision_lote" type="number" min="0" max="10" step="0.1" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary tabular" value={params.comision_lote} onChange={(e) => handleParamChange('comision_lote', parseFloat(e.target.value))} />
                 </div>
                 <div className="flex items-end gap-3">
-                  <label className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
-                    <input type="checkbox" checked={params.usar_kill_zones} onChange={(e) => handleParamChange('usar_kill_zones', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
+                  <label htmlFor="strat-usar_kill_zones" className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
+                    <input id="strat-usar_kill_zones" type="checkbox" checked={params.usar_kill_zones} onChange={(e) => handleParamChange('usar_kill_zones', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
                     Usar Kill Zones
                   </label>
-                  <label className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
-                    <input type="checkbox" checked={params.usar_trend_d1} onChange={(e) => handleParamChange('usar_trend_d1', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
+                  <label htmlFor="strat-usar_trend_d1" className="flex items-center gap-1 font-condensed text-[11px] tracking-widest text-text-secondary uppercase">
+                    <input id="strat-usar_trend_d1" type="checkbox" checked={params.usar_trend_d1} onChange={(e) => handleParamChange('usar_trend_d1', e.target.checked)} className="w-4 h-4 accent-brand-cyan" />
                     Usar Trend D1
                   </label>
                 </div>

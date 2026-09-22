@@ -24,7 +24,6 @@ function App() {
   const soundsEnabled = useStore((s) => s.soundsEnabled)
   const soundQueue = useStore((s) => s.soundQueue)
   const clearSoundQueue = useStore((s) => s.clearSoundQueue)
-  const pushNotificationsEnabled = useStore((s) => s.pushNotificationsEnabled)
   const setPushNotificationsEnabled = useStore((s) => s.setPushNotificationsEnabled)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -86,7 +85,7 @@ function App() {
   }
 
   const sendPushNotification = (signal: any) => {
-    if (!pushNotificationsEnabled || !isHighConfidence(signal)) return
+    if (!useStore.getState().pushNotificationsEnabled || !isHighConfidence(signal)) return
     if (Notification.permission !== 'granted') return
     try {
       new Notification(`PIVOT — ${signal.asset} ${signal.direccion === 1 ? 'LONG' : 'SHORT'}`, {
@@ -120,7 +119,7 @@ function App() {
             addSignal(msg.data)
             // Sonido
             if (isHighConfidence(msg.data)) {
-              if (soundsEnabled) {
+              if (useStore.getState().soundsEnabled) {
                 playAlertSound()
               } else {
                 // Acumular en cola

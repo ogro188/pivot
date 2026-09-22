@@ -30,12 +30,12 @@ export default function ConfigPage() {
       <div className="panel p-3 space-y-4 max-w-xl">
         <h2 className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase">Notificaciones ntfy — global (fallback)</h2>
         <div>
-          <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
-          <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
+          <label htmlFor="ntfy-global-topic" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
+          <input id="ntfy-global-topic" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyTopic} onChange={(e) => setNtfyTopic(e.target.value)} placeholder="mi-topic-secreto" />
         </div>
         <div>
-          <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Server</label>
-          <input className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} />
+          <label htmlFor="ntfy-global-server" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Server</label>
+          <input id="ntfy-global-server" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={ntfyServer} onChange={(e) => setNtfyServer(e.target.value)} />
         </div>
         <button onClick={handleSaveGlobal} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors">Guardar global</button>
         {status && <div className="text-sm text-text-secondary">{status}</div>}

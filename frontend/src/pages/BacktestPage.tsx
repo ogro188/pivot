@@ -56,32 +56,32 @@ export default function BacktestPage() {
       <div className="panel p-3 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Activo</label>
-            <select className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={asset} onChange={(e) => setAsset(e.target.value)}>
+            <label htmlFor="bt-asset" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Activo</label>
+            <select id="bt-asset" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={asset} onChange={(e) => setAsset(e.target.value)}>
               <option value="">Seleccionar...</option>
               {assets?.map((a: any) => <option key={a.simbolo} value={a.simbolo}>{a.simbolo}</option>)}
             </select>
           </div>
           <div>
-            <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Estrategia</label>
-            <select className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={strategy} onChange={(e) => setStrategy(e.target.value)}>
+            <label htmlFor="bt-strategy" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Estrategia</label>
+            <select id="bt-strategy" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={strategy} onChange={(e) => setStrategy(e.target.value)}>
               <option value="">Seleccionar...</option>
               {strategies?.map((s: any) => <option key={s.nombre} value={s.nombre}>{s.nombre}</option>)}
             </select>
           </div>
           <div>
-            <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Timeframe</label>
-            <select className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+            <label htmlFor="bt-timeframe" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Timeframe</label>
+            <select id="bt-timeframe" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
               {['M15', 'H1', 'H4', 'D1'].map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Desde</label>
-            <input type="datetime-local" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={desde} onChange={(e) => setDesde(e.target.value)} />
+            <label htmlFor="bt-desde" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Desde</label>
+            <input id="bt-desde" type="datetime-local" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={desde} onChange={(e) => setDesde(e.target.value)} />
           </div>
           <div>
-            <label className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Hasta</label>
-            <input type="datetime-local" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+            <label htmlFor="bt-hasta" className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Hasta</label>
+            <input id="bt-hasta" type="datetime-local" className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={hasta} onChange={(e) => setHasta(e.target.value)} />
           </div>
         </div>
         {stratObj ? (

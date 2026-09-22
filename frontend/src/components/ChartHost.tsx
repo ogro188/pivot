@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'rea
 import { ChartView, DrawingToolbar, IndicatorController, IndicatorPicker, createBuiltinRegistry, type ChartController } from '@getcandlekit/charts/react'
 import { createSeriesMarkers, ISeriesApi, ISeriesMarkersPluginApi, UTCTimestamp, SeriesMarker, LogicalRange } from 'lightweight-charts'
 import { CandleDTO, SignalDTO, AssetDTO } from '../store'
+import { SIGNAL_LONG, SIGNAL_SHORT } from '../theme'
 
 export interface VisibleRange {
   from: number
@@ -133,7 +134,7 @@ function SignalsMarkers({ signals, targets, ready }: { signals: SignalDTO[]; tar
         return {
           time: Math.floor(s.ts / 1000) as UTCTimestamp,
           position: isLong ? 'belowBar' : 'aboveBar',
-          color: isLong ? '#2FBF71' : '#D64550',
+          color: isLong ? SIGNAL_LONG : SIGNAL_SHORT,
           shape: 'circle',
           text: s.etiqueta?.replace('PIVOT_', '') || 'S',
         }
