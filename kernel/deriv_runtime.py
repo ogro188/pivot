@@ -404,6 +404,8 @@ class AssetDerivStream:
                 "narrativa": narrativa,
                 "estado": "activa",
                 "detectores": [sig.detector],
+                "fuente": "deriv",
+                "datos_prueba": False,
             }
         except Exception as e:
             logger.error(f"[{self.simbolo}] Error serializando señal del detector: {e}")
@@ -440,6 +442,7 @@ class AssetDerivStream:
             hipotesis_expiry_velas=sig["expiracion_velas"],
             conviccion=sig["confianza"][1] / 100.0,
             regimen_volatilidad="NORMAL",
+            fuente="deriv",
         )
 
     def status(self) -> Dict[str, Any]:

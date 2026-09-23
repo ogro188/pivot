@@ -944,7 +944,8 @@ class PivotRadarEngine:
                 hipotesis_prob_max=sig.hipotesis_prob_max or 0.0,
                 hipotesis_expiry_velas=sig.hipotesis_expiry_velas or 0,
                 conviccion=sig.conviccion or 0.0,
-                regimen_volatilidad=sig.regimen_volatilidad or ""
+                regimen_volatilidad=sig.regimen_volatilidad or "",
+                fuente="deriv",
             ))
             loop.close()
             sig.csv_written = True
@@ -1061,7 +1062,8 @@ class PivotRadarEngine:
                     hipotesis_prob_max=s.hipotesis_prob_max or 0.0,
                     hipotesis_expiry_velas=s.hipotesis_expiry_velas or 0,
                     conviccion=s.conviccion or 0.0,
-                    regimen_volatilidad=s.regimen_volatilidad or ""
+                    regimen_volatilidad=s.regimen_volatilidad or "",
+                    fuente="deriv",
                 ))
                 loop.close()
                 s.csv_written = True
@@ -1086,7 +1088,7 @@ class PivotRadarEngine:
             "✅ ARQUITECTURA PLUGIN ACTIVA\n"
             "✅ TODOS LOS DETECTORES INTRAVELA"
         )
-        if self.alertas.send_ntfy_message(msg):
+        if self.alertas.send_ntfy_message(msg, forzar=True):
             print("Mensaje de prueba enviado")
         else:
             print("Fallo test")

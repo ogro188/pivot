@@ -86,9 +86,22 @@ class Database:
             hipotesis_expiry_velas INTEGER,
             conviccion REAL,
             regimen_volatilidad TEXT,
+            fuente TEXT DEFAULT 'deriv',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
-        
+
+        # Migración: columna fuente en DBs creadas antes de este cambio
+        try:
+            cursor.execute("ALTER TABLE senales_core ADD COLUMN fuente TEXT DEFAULT 'deriv'")
+        except sqlite3.OperationalError:
+            pass
+
+        # Backfill por huella: la etiqueta PIVOT_* solo la genera el replay/backtest
+        cursor.execute(
+            "UPDATE senales_core SET fuente='replay' "
+            "WHERE (fuente IS NULL OR fuente='' OR fuente='deriv') AND tipo LIKE 'PIVOT_%'"
+        )
+
         # Tabla para cola de señales pendientes
         cursor.execute("""CREATE TABLE IF NOT EXISTS cola_senales (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -217,16 +230,20 @@ class Database:
                                   direction: int, entry_price: float, detector: str, tipo: str,
                                   hipotesis_prob_min: float, hipotesis_prob_max: float,
                                   hipotesis_expiry_velas: int, conviccion: float,
-                                  regimen_volatilidad: str):
-        """Guarda una señal del core en SQLite (reemplaza write_signal_to_csv)"""
+                                  regimen_volatilidad: str, fuente: str = "deriv"):
+        """Guarda una señal del core en SQLite (reemplaza write_signal_to_csv).
+
+        fuente: 'deriv' (datos de mercado en vivo) | 'replay' | 'backtest' | 'test'
+        """
         self.initialize()
         query = """INSERT OR REPLACE INTO senales_core 
             (signal_id, entry_time, symbol, direction, entry_price, detector, tipo,
-             hipotesis_prob_min, hipotesis_prob_max, hipotesis_expiry_velas, conviccion, regimen_volatilidad)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+             hipotesis_prob_min, hipotesis_prob_max, hipotesis_expiry_velas, conviccion,
+             regimen_volatilidad, fuente)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         params = (signal_id, entry_time.isoformat(), symbol, direction, entry_price, 
                   detector, tipo, hipotesis_prob_min, hipotesis_prob_max, 
-                  hipotesis_expiry_velas, conviccion, regimen_volatilidad)
+                  hipotesis_expiry_velas, conviccion, regimen_volatilidad, fuente)
         await self.execute_async(query, params)
     
     async def obtener_senales_core(self, symbol: str = None, limite: int = 100) -> List[Dict]:

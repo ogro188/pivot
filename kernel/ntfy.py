@@ -12,6 +12,16 @@ logger = logging.getLogger(__name__)
 DEFAULT_SERVER = "https://ntfy.sh"
 
 
+def alertas_live_habilitadas() -> bool:
+    """True solo si las alertas de mercado en vivo están habilitadas explícitamente.
+
+    Default OFF: el sistema puede estar en prueba/replay sin spamear ntfy.
+    Habilitar con PIVOT_ALERTAS_LIVE=1 (o true/yes/on).
+    """
+    raw = (os.getenv("PIVOT_ALERTAS_LIVE") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def cargar_config_activo(simbolo: str) -> Dict[str, str]:
     """Config ntfy del activo: prioriza activos/{simbolo}.json -> data/ntfy_config.json."""
     ntfy: Dict[str, str] = {}
@@ -55,8 +65,20 @@ def guardar_config_activo(simbolo: str, topic: str, server: str) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def enviar(simbolo: str, text: str, config: Dict[str, str] | None = None) -> Tuple[bool, str]:
-    """Envía un mensaje ntfy para el activo. Devuelve (ok, detalle)."""
+def enviar(
+    simbolo: str,
+    text: str,
+    config: Dict[str, str] | None = None,
+    *,
+    forzar: bool = False,
+) -> Tuple[bool, str]:
+    """Envía un mensaje ntfy para el activo. Devuelve (ok, detalle).
+
+    forzar=True salta el gate de alertas live (solo para el endpoint de test
+    de conectividad). El replay/backtest nunca debe pasar forzar=True.
+    """
+    if not forzar and not alertas_live_habilitadas():
+        return False, "Alertas live deshabilitadas (PIVOT_ALERTAS_LIVE)"
     cfg = config or cargar_config_activo(simbolo)
     topic = cfg.get("topic", "")
     if not topic:

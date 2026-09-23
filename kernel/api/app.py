@@ -98,22 +98,24 @@ def _serialize_senal(s) -> Dict[str, Any]:
     detectores = []
     if isinstance(s.contexto, dict):
         detectores = s.contexto.get("detectores", []) or []
-    return {
-        "id": s.id_señal or f"sig_{ts}",
-        "ts": ts,
-        "asset": s.simbolo,
-        "estrategia": s.estrategia,
-        "etiqueta": s.etiqueta,
-        "direccion": int(s.direccion),
-        "precio": float(s.precio),
-        "expiracion_velas": int(s.expiracion_velas),
-        "confianza": [conf_min, conf_max],
-        "objetivo": float(s.take_profit) if s.take_profit else None,
-        "invalidacion": float(s.stop_loss) if s.stop_loss else None,
-        "narrativa": s.narrativa,
-        "estado": "activa",
-        "detectores": detectores,
-    }
+        return {
+            "id": s.id_señal or f"sig_{ts}",
+            "ts": ts,
+            "asset": s.simbolo,
+            "estrategia": s.estrategia,
+            "etiqueta": s.etiqueta,
+            "direccion": int(s.direccion),
+            "precio": float(s.precio),
+            "expiracion_velas": int(s.expiracion_velas),
+            "confianza": [conf_min, conf_max],
+            "objetivo": float(s.take_profit) if s.take_profit else None,
+            "invalidacion": float(s.stop_loss) if s.stop_loss else None,
+            "narrativa": s.narrativa,
+            "estado": "activa",
+            "detectores": detectores,
+            "fuente": "backtest",
+            "datos_prueba": True,
+        }
 
 
 def _df_a_velas(df, n: int) -> List[Dict[str, Any]]:
@@ -161,25 +163,39 @@ def _cargar_velas_deriv(simbolo: str, tf: str, count: int) -> Optional[List[Dict
     return _df_a_velas(df, count)
 
 
+def _path_m15_para(simbolo: str) -> str:
+    """Resuelve el CSV M15 para charts/replay.
+
+    Prefiere capturas live; nunca usa *_m15_real.csv (ese archivo es sintético
+    de 2024 con precisión de 16 decimales, no es mercado real).
+    """
+    path_live = f"data/live_{simbolo.lower()}_m15.csv"
+    path_m15 = f"data/{simbolo.lower()}_m15.csv"
+    if os.path.exists(path_live):
+        return path_live
+    return path_m15
+
+
+def _es_datos_prueba(path: str) -> bool:
+    """True si el CSV no es una captura live."""
+    name = os.path.basename(path).lower()
+    return not name.startswith("live_")
+
+
 def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
     """Carga velas OHLC para el chart. Usa el CSV del timeframe o resamplea desde M15.
-    
-    Prioriza datos reales (eurusd_m15_real.csv) sobre el CSV de prueba sintético
-    para que los gráficos muestren datos actuales y alineados con la hora real.
+
+    Prioriza capturas live sobre CSVs de prueba; no usa *_m15_real.csv (sintético).
     """
     from kernel.feeds.csv import CSVFeed
     from kernel.feeds.csv_resample import resamplear_ohlc
 
-    # Preferir datos reales sobre el CSV de prueba sintético
-    path_real = f"data/{simbolo.lower()}_m15_real.csv"
-    path_m15 = f"data/{simbolo.lower()}_m15.csv"
-    
+    path_m15 = _path_m15_para(simbolo)
+
     if tf.upper() == "M15":
-        # Usar datos reales si existen, sino el CSV de prueba
-        path = path_real if os.path.exists(path_real) else path_m15
-        if not os.path.exists(path):
+        if not os.path.exists(path_m15):
             raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
-        feed = CSVFeed(path=path, timeframe="M15", symbol=simbolo.upper())
+        feed = CSVFeed(path=path_m15, timeframe="M15", symbol=simbolo.upper())
         return _df_a_velas(feed.df, count)
 
     path_tf = f"data/{simbolo.lower()}_{tf.lower()}.csv"
@@ -187,12 +203,11 @@ def _cargar_velas(simbolo: str, tf: str, count: int) -> List[Dict[str, Any]]:
         feed = CSVFeed(path=path_tf, timeframe=tf.upper(), symbol=simbolo.upper())
         return _df_a_velas(feed.df, count)
 
-    # Resamplear desde M15 (usando datos reales si existen)
-    path_m15_real = path_real if os.path.exists(path_real) else path_m15
-    if not os.path.exists(path_m15_real):
+    # Resamplear desde M15 (usando live si existe, si no el de prueba)
+    if not os.path.exists(path_m15):
         raise HTTPException(status_code=404, detail=f"No hay datos históricos para {simbolo}")
-    
-    feed_m15 = CSVFeed(path=path_m15_real, timeframe="M15", symbol=simbolo.upper())
+
+    feed_m15 = CSVFeed(path=path_m15, timeframe="M15", symbol=simbolo.upper())
     df = resamplear_ohlc(feed_m15.df, tf.upper())
     return _df_a_velas(df, count)
 
@@ -239,10 +254,13 @@ async def _replay_asset(simbolo: str, params: dict | None = None):
 
     try:
         activo = cargar_activo(simbolo)
-        # Preferir datos reales sobre el CSV de prueba sintético
-        path_real = f"data/{simbolo.lower()}_m15_real.csv"
-        path_m15 = f"data/{simbolo.lower()}_m15.csv"
-        path_csv = path_real if os.path.exists(path_real) else path_m15
+        path_csv = _path_m15_para(simbolo)
+        origen_datos = "live_csv" if os.path.basename(path_csv).lower().startswith("live_") else "test_csv"
+        if not os.path.exists(path_csv):
+            raise HTTPException(
+                status_code=404,
+                detail=f"No hay datos históricos para {simbolo} en {path_csv}",
+            )
         feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)
 
         señales = []
@@ -260,7 +278,10 @@ async def _replay_asset(simbolo: str, params: dict | None = None):
         signals_payload = [_serialize_senal(s) for s in señales]
         signals_sent = set()
 
-        await _log("INFO", f"Runtime {activo.simbolo} iniciado (replay {len(feed.df)} velas)")
+        await _log(
+            "INFO",
+            f"Runtime {activo.simbolo} iniciado (replay {len(feed.df)} velas, origen={origen_datos})",
+        )
 
         for bar in feed.iter_barras():
             if not _RUNNING.get(activo.simbolo, False):
@@ -299,27 +320,20 @@ async def _replay_asset(simbolo: str, params: dict | None = None):
                         hipotesis_expiry_velas=sig["expiracion_velas"],
                         conviccion=sig["confianza"][1] / 100.0,
                         regimen_volatilidad="NORMAL",
+                        fuente="replay" if origen_datos == "test_csv" else "live_csv",
                     )
                 except Exception as e:
                     logger.error(f"Error persistiendo señal: {e}")
+                sig_out = dict(sig)
+                sig_out["fuente"] = "replay" if origen_datos == "test_csv" else "live_csv"
+                sig_out["datos_prueba"] = origen_datos == "test_csv"
                 await manager.broadcast({
                     "type": "signal",
-                    "data": sig,
+                    "data": sig_out,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                try:
-                    from kernel.ntfy import cargar_config_activo, enviar as ntfy_enviar
-                    ntfy_cfg = cargar_config_activo(activo.simbolo)
-                    if ntfy_cfg.get("topic"):
-                        dir_txt = "CALL" if sig["direccion"] == 1 else "PUT"
-                        texto = (
-                            f"SEÑAL — {activo.simbolo}\n"
-                            f"{dir_txt} @ {sig['precio']}\n"
-                            f"Confianza {sig['confianza'][0]}-{sig['confianza'][1]}%"
-                        )
-                        await asyncio.to_thread(ntfy_enviar, activo.simbolo, texto, ntfy_cfg)
-                except Exception as e:
-                    logger.warning(f"ntfy no enviado en replay: {e}")
+                # Replay NO envía ntfy: es un runtime de prueba/replay.
+                # Las alertas live solo salen del stream Deriv con PIVOT_ALERTAS_LIVE=1.
 
             await asyncio.sleep(0.15)
 
@@ -497,12 +511,9 @@ def create_app() -> FastAPI:
             elif precio is not None:
                 price = precio
             else:
-                # Preferir datos reales sobre el CSV de prueba sintético
+                # Preferir capturas live; nunca el CSV sintético *_m15_real.csv
                 # Usar activo.simbolo (no el nombre del JSON) para no pedir e.g. eurusd_binary_m15.csv
-                base = activo.simbolo.lower()
-                path_real = f"data/{base}_m15_real.csv"
-                path_m15 = f"data/{base}_m15.csv"
-                path_csv = path_real if os.path.exists(path_real) else path_m15
+                path_csv = _path_m15_para(activo.simbolo)
                 try:
                     feed = CSVFeed(path=path_csv, timeframe="M15", symbol=activo.simbolo)
                     price = float(feed.df["close"].iloc[-1])
@@ -672,7 +683,7 @@ def create_app() -> FastAPI:
         cfg = cargar_config_activo(simbolo)
         if not cfg.get("topic"):
             raise HTTPException(status_code=400, detail="No hay topic ntfy configurado para este activo")
-        ok, detalle = await asyncio.to_thread(enviar, simbolo, mensaje_prueba(simbolo), cfg)
+        ok, detalle = await asyncio.to_thread(enviar, simbolo, mensaje_prueba(simbolo), cfg, forzar=True)
         return {"ok": ok, "simbolo": simbolo, "detail": detalle, "topic": cfg.get("topic"), "server": cfg.get("server")}
 
     @app.post("/api/backtest")

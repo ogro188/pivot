@@ -161,8 +161,8 @@ class EstrategiaPivot(Estrategia):
         "z_score": {"tipo": "float", "default": 1.96, "min": 1.0, "max": 3.0},
         "min_muestras": {"tipo": "int", "default": 30, "min": 1, "max": 200},
 
-        # Alertas ntfy (solo modo en vivo)
-        "ntfy_topic": {"tipo": "str", "default": "pivot_alerts"},
+        # Alertas ntfy (solo modo en vivo; además requiere PIVOT_ALERTAS_LIVE=1)
+        "ntfy_topic": {"tipo": "str", "default": ""},
         "alertas_habilitadas": {"tipo": "bool", "default": False},
     }
 
@@ -233,7 +233,7 @@ class EstrategiaPivot(Estrategia):
             from core.alertas import AlertasEngine
             self.alertas = AlertasEngine(
                 symbol=activo.simbolo if activo else "EURUSD",
-                ntfy_topic=params.get("ntfy_topic", "pivot_alerts")
+                ntfy_topic=params.get("ntfy_topic", "") or ""
             )
         except Exception as e:
             logger.error(f"AlertasEngine no disponible, alertas desactivadas: {e}", exc_info=True)

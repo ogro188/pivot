@@ -102,9 +102,14 @@ class AlertasEngine:
         msg += "📍 Dato para evaluar, no una orden."
         return msg
 
-    def send_ntfy_message(self, text: str) -> bool:
+    def send_ntfy_message(self, text: str, *, forzar: bool = False) -> bool:
         if not self.ntfy_topic:
             return False
+        # Gate global: en prueba/replay no se spamea ntfy live.
+        if not forzar:
+            from kernel.ntfy import alertas_live_habilitadas
+            if not alertas_live_habilitadas():
+                return False
         if (datetime.now(timezone.utc) - self.g_last_ntfy_time).total_seconds() < 5:
             return False
         url = f"{self.ntfy_server}/{self.ntfy_topic}"

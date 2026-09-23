@@ -45,7 +45,8 @@ def test_database_guarda_senal_core():
             hipotesis_prob_max=0.8,
             hipotesis_expiry_velas=5,
             conviccion=75.0,
-            regimen_volatilidad='NORMAL'
+            regimen_volatilidad='NORMAL',
+            fuente='deriv',
         )
         
         senales = await db.obtener_senales_core(symbol='EURUSD', limite=10)
@@ -53,6 +54,7 @@ def test_database_guarda_senal_core():
         assert senales[0]['signal_id'] == 'TEST001'
         assert senales[0]['detector'] == 'D2'
         assert senales[0]['direction'] == 1
+        assert senales[0]['fuente'] == 'deriv'
     
     asyncio.run(run_test())
 
