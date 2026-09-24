@@ -59,7 +59,7 @@ pivot/
 ├── data/                    # Historical CSVs (EURUSD M15/H1/H4/D1, XAUUSD M15)
 ├── frontend/                # React + TS + Vite + Tailwind + Zustand
 ├── tests/
-│   ├── unit/                # 70 unit tests
+│   ├── unit/                # 81 unit tests
 │   └── integration/         # API + backtest integration tests
 ├── scripts/
 │   ├── export_ml_dataset.py # ML dataset export (CSV/Parquet)
@@ -177,7 +177,46 @@ Global limits: `max_daily_loss_pct`, `max_daily_trades`, `max_concurrent_trades`
 | `/api/backtest` | POST | Run backtest (spot or binary) |
 | `/api/assets/{sym}/history` | GET | Historical candles |
 | `/api/assets/{sym}/signals` | GET | Recent signals |
-| `/ws` | WS | Real-time signal stream |
+| `/api/assets/{sym}/consola` | GET | Runtime logs |
+| `/api/assets/{sym}/start` | POST | Start runtime (live or replay) |
+| `/api/assets/{sym}/stop` | POST | Stop runtime |
+| `/api/assets/{sym}/ntfy` | GET/POST | Per-asset ntfy config |
+| `/api/assets/{sym}/ntfy/test` | POST | Send test ntfy (bypasses live gate) |
+| `/api/config/ntfy` | POST | Global ntfy config |
+| `/api/config` | GET | Global system config |
+| `/ws` | WS | Real-time signal stream (`signal`, `tick`, `candle`, `status`, `consola`) |
+
+**Frontend (dev)**: `cd frontend && npm run dev` → http://localhost:5173  
+Vite proxies `/api` and `/ws` → `http://localhost:8000` (backend).
+
+---
+
+## Signal origin (`senales_core.fuente`)
+
+| `fuente` | Origin | ntfy live |
+|----------|--------|-----------|
+| `deriv` | Live Deriv stream (`motor_v8` / `deriv_runtime`) | Only if `PIVOT_ALERTAS_LIVE=1` |
+| `replay` | CSV replay runtime (`_replay_asset`) | Never |
+| `live_csv` | Replay from `data/live_*_m15.csv` | Never |
+| `backtest` | `POST /api/backtest` | Never |
+
+Legacy rows with `tipo LIKE 'PIVOT_%'` are backfilled to `fuente='replay'`.
+
+### Alerts gate
+
+```bash
+# .env — default OFF (safe for testing)
+PIVOT_ALERTAS_LIVE=0   # set 1 only when trading live with real Deriv data
+```
+
+- Replay/backtest never send ntfy.
+- `POST .../ntfy/test` forces a send for connectivity checks only.
+- `.env.example` documents the flag; copy to `.env` and set `1` to go live.
+
+### CSV preference
+
+Charts/replay prefer `data/live_{sym}_m15.csv` over `data/{sym}_m15.csv`.  
+**Never** treats `{sym}_m15_real.csv` as live market data (that file is synthetic test data).
 
 ---
 
@@ -188,6 +227,9 @@ Global limits: `max_daily_loss_pct`, `max_daily_trades`, `max_concurrent_trades`
 pip install -r requirements.txt
 pip install pytest pytest-cov
 
+# Env
+cp .env.example .env   # fill DERIV_* tokens; keep PIVOT_ALERTAS_LIVE=0 while testing
+
 # Unit tests
 pytest tests/unit -v
 
@@ -197,31 +239,14 @@ pytest tests/integration -v
 # Manual backtest (spot)
 python test_pivot_backtest.py
 
-# Binary backtest
-python -c "
-import json
-from kernel.binary.engine import run_binary_backtest
-from kernel.contrato import BinaryActivoInfo
-from estrategias.binary import PivotBinary
-from kernel.binary.risk import BinaryRiskConfig, BinaryRiskMode
-
-with open('activos/eurusd_binary.json') as f:
-    activo = BinaryActivoInfo(**json.load(f))
-
-resultado = run_binary_backtest(
-    estrategia=PivotBinary(),
-    activo=activo,
-    data_path='data/eurusd_m15.csv',
-    capital=10000.0,
-    risk_config=BinaryRiskConfig(mode=BinaryRiskMode.FIXED, fixed_amount=10.0)
-)
-print(f'Winrate: {resultado.winrate:.1f}% | ROI: {resultado.roi_pct:.2f}% | PF: {resultado.profit_factor:.2f}')
-"
-
-# API server
+# API server (backend :8000)
 python -m cli
 # Swagger: http://localhost:8000/docs
 # WS: ws://localhost:8000/ws
+
+# Frontend (dev :5173)
+cd frontend && npm install && npm run dev
+# http://localhost:5173  (proxies /api and /ws to :8000)
 ```
 
 ---
@@ -239,18 +264,19 @@ Output: Parquet with 50+ features per trade (detector combo, qualities, G-metric
 ## Testing
 
 ```bash
-# Unit tests (70 tests, ~7s)
+# Unit tests (81 tests, ~10s)
 pytest tests/unit -v
 
 # Integration tests (API + backtest, ~60s)
 pytest tests/integration -v
 
 # Specific test
+pytest tests/unit/test_alertas_gate.py -v
 pytest tests/unit/test_binary.py -v
 pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 ```
 
-**Coverage**: 70 unit tests + 22 integration tests. CI runs unit tests; integration tests require data files.
+**Coverage**: 81 unit tests + integration tests. CI runs unit tests; integration tests require data files.
 
 ---
 
