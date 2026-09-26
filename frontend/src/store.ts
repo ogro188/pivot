@@ -7,6 +7,7 @@ export interface SignalDTO {
   confianza: [number, number]; objetivo?: number; invalidacion?: number;
   narrativa: string; estado: string; detectores?: string[];
   conviccion?: string; timeframe?: string;
+  datos_prueba?: boolean;
 }
 
 export interface AssetDTO {

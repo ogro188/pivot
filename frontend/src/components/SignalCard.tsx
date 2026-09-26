@@ -4,8 +4,14 @@ export default function SignalCard({ signal }: { signal: SignalDTO }) {
   const isLong = signal.direccion === 1
   const dirColor = isLong ? 'text-signal-long' : 'text-signal-short'
   const dirLabel = isLong ? 'LONG' : 'SHORT'
+  const esDatosPrueba = signal.datos_prueba === true
   return (
     <div className="panel p-2.5 mb-1.5 hover:border-base-line transition-colors">
+      {esDatosPrueba && (
+        <div className="font-mono text-[9px] tracking-wider text-brand-cyan border border-brand-cyan/40 px-1.5 py-0.5 mb-1.5 uppercase">
+          DATOS DE PRUEBA — no es precio de mercado
+        </div>
+      )}
       <div className="flex justify-between items-center mb-1">
         <div className="flex items-center gap-2">
           <span className="font-condensed text-[11px] tracking-widest text-text-secondary uppercase">{signal.estrategia}</span>
