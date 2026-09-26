@@ -35,6 +35,15 @@ class DetectorD2Anticipacion(Detector):
         sweep_high = high0 > prior_high
         sweep_low = low0 < prior_low
 
+        # Exclusion mutua con D1 (ruptura confirmada): si la vela YA cerro
+        # fuera del rango, es dominio de D1 (con el fix D02 exige cierre), no
+        # una anticipacion de rechazo. La anticipacion es justamente "la mecha
+        # rompe pero el cierre todavia esta dentro".
+        if sweep_high and close0 > prior_high:
+            sweep_high = False
+        if sweep_low and close0 < prior_low:
+            sweep_low = False
+
         sig = Signal()
         sig.entry_time = ctx._i_time(ctx.df_m15, 0)
         sig.entry_bar_shift = 0
