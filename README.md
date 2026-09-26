@@ -66,6 +66,10 @@ pivot/
 │   └── run_deriv_ws.py      # Live WebSocket runner
 ├── docker-compose.yml       # 2 services (API, Frontend)
 ├── Dockerfile               # Multi-stage, non-root user
+├── docs/                    # Specs, manual y notas de fases
+│   ├── especificacion_pivotradar_v8_sin_restricciones.md
+│   ├── SPEC_PV_TERMINAL.md  # Frontend redesign spec
+│   └── MANUAL_SISTEMA.md    # System manual
 └── requirements.txt
 ```
 
@@ -230,6 +234,9 @@ pip install pytest pytest-cov
 # Env
 cp .env.example .env   # fill DERIV_* tokens; keep PIVOT_ALERTAS_LIVE=0 while testing
 
+# Docs & specs
+docs/  # specifications, system manual and phase notes
+
 # Unit tests
 pytest tests/unit -v
 
@@ -277,14 +284,6 @@ pytest tests/integration/test_backtest.py::TestBacktestEngine -v
 ```
 
 **Coverage**: 81 unit tests + integration tests. CI runs unit tests; integration tests require data files.
-
----
-
-## Known Issues
-
-| Component | Issue | Severity |
-|-----------|-------|----------|
-| Loose files | `especificacion_pivotradar_v8_sin_restricciones.md` should move to `docs/`. | Low |
 
 ---
 

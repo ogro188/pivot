@@ -33,6 +33,9 @@ coverage/
 # Pytest
 .pytest_cache/
 
+# Freebuff local state
+.freebuff/
+
 # Node / Frontend
 node_modules/
 frontend/node_modules/
