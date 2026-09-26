@@ -28,7 +28,10 @@ class DetectorD2(Detector):
         equal_hl = False
         sweep_detected = False
 
-        for i in range(1, 3):
+        # Ventana de UNA sola vela: con range(1, 3) el mismo barrido se
+        # detectaba primero como vela 1 y una barra despues como vela 2
+        # (90 repeticiones en 182 senales).
+        for i in range(1, 2):
             hi = ctx._i_high(ctx.df_m15, i)
             li = ctx._i_low(ctx.df_m15, i)
             if hi == 0 or li == 0:
