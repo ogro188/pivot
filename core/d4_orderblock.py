@@ -61,7 +61,11 @@ class DetectorD4(Detector):
                 continue
 
             ob_bar = i
-            ob_dir = di
+            # Direccion = la del IMPULSO, no el color de la vela origen
+            # (convencion estandar de order block). imp_dir_ok exige que el
+            # impulso sea contrario al color de la vela candidata, por lo que
+            # la direccion de la senal es -di.
+            ob_dir = -di
             ob_high = hi
             ob_low = li
             ob_impulse = imp
