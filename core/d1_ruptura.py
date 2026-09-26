@@ -35,14 +35,18 @@ class DetectorD1(Detector):
         direction = 0
         nivel_ruptura = 0.0
         penetracion = 0.0
-        if high0 > highest_high:
+        # Ruptura confirmada: exige CIERRE fuera del rango, no basta la mecha.
+        # (Antes bastaba high0/low0: una vela que rompia por mecha y cerraba
+        # adentro contaba como ruptura; en la muestra medida el 49% de las
+        # senales asi generadas cerro de vuelta dentro del rango.)
+        if high0 > highest_high and close0 > highest_high:
             direction = 1
             nivel_ruptura = highest_high
-            penetracion = (high0 - highest_high) / atr14
-        elif low0 < lowest_low:
+            penetracion = (close0 - highest_high) / atr14
+        elif low0 < lowest_low and close0 < lowest_low:
             direction = -1
             nivel_ruptura = lowest_low
-            penetracion = (lowest_low - low0) / atr14
+            penetracion = (lowest_low - close0) / atr14
 
         sig = Signal()
         sig.entry_time = ctx._i_time(ctx.df_m15, 0)
