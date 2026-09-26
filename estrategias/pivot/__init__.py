@@ -412,7 +412,9 @@ class EstrategiaPivot(Estrategia):
         detector_data = {
             campo: getattr(sig, campo)
             for campo in _DETECTOR_DATA_FIELDS
-            if hasattr(sig, campo)
+            # None = no evaluable en esta vela (ej. fvg_mitigated en la vela de
+            # formacion del gap): se omite para no presentar "False" como dato.
+            if hasattr(sig, campo) and getattr(sig, campo) is not None
         }
 
         contexto = {

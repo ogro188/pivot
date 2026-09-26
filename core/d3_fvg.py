@@ -96,8 +96,13 @@ class DetectorD3(Detector):
 
         mit_level = fvg_bottom + (fvg_top - fvg_bottom) * ctx.inp_fvg_mitig_umbral
         price0 = ctx._i_close(ctx.df_m15, 0)
-        mitigado = (direction == 1 and price0 <= mit_level) or (direction == -1 and price0 >= mit_level)
-        sig.fvg_mitigated = mitigado
+        # Mitigacion NO evaluable en la vela de formacion del gap: fvg_top/bottom
+        # se calculan con la misma vela 0 (lc2 = low de la vela 0), por lo que
+        # price0 <= mit_level era matematicamente imposible (close(0) >= low(0)
+        # = fvg_top > mit_level siempre). Evaluarla requiere seguimiento
+        # multi-vela con estado de gaps abiertos (ver directiva D05, fix completo).
+        # price0 se conserva: el bloque "defendido" si lo usa.
+        sig.fvg_mitigated = None
 
         defendido = False
         if direction == 1 and price0 > fvg_top:
