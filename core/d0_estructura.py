@@ -71,22 +71,17 @@ class EstructuraProvider:
                 lows.append(low_i)
 
         if highs:
-            max_high = max(highs)
-            est.swing_high = max_high
-            second_high = 0.0
-            for h in highs:
-                if h < max_high and h > second_high:
-                    second_high = h
-            est.swing_high_ant = second_high
+            # highs está en orden cronológico (i crece hacia el pasado): el
+            # pivote más reciente es highs[0] y el anterior a ese highs[1].
+            # (Antes se tomaba por magnitud: swing_high era siempre el máximo
+            # de la ventana, por lo que hh era casi siempre True y la
+            # estructura nunca salía ALCISTA ni BAJISTA.)
+            est.swing_high = highs[0]
+            est.swing_high_ant = highs[1] if len(highs) > 1 else 0.0
 
         if lows:
-            min_low = min(lows)
-            est.swing_low = min_low
-            second_low = 999999.0
-            for l in lows:
-                if l > min_low and l < second_low:
-                    second_low = l
-            est.swing_low_ant = second_low if second_low < 999999.0 else 0.0
+            est.swing_low = lows[0]
+            est.swing_low_ant = lows[1] if len(lows) > 1 else 0.0
 
     def _identificar_sweep(self, est: EstructuraRef):
         price = self.ctx._i_close(self.ctx.df_m15, 0)
