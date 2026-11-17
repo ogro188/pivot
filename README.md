@@ -10,6 +10,9 @@ PIVOT is a modular algorithmic trading system for pattern detection across multi
 - Zero look-ahead guarantee in backtesting
 - Binary options and spot/forex modes
 - ML-ready dataset generation (100+ features per signal)
+- Live market data from the IQ Options public read-only API for four assets
+  (two spot, two OTC); Deriv CSV history is used only for warm-up
+- Alerts delivered to a local ntfy server, gated explicitly by `PIVOT_ALERTAS_LIVE`
 
 ---
 
@@ -18,8 +21,10 @@ PIVOT is a modular algorithmic trading system for pattern detection across multi
 ```
 pivot/
 ├── activos/                 # Instrument configs (JSON)
-│   ├── eurusd.json
-│   ├── xauusd.json
+│   ├── eurusd.json         # IQ Options spot (active_id 1)
+│   ├── xauusd.json         # IQ Options spot (active_id 74)
+│   ├── eurusd-otc.json     # IQ Options OTC (active_id 76)
+│   ├── xauusd-otc.json     # IQ Options OTC (active_id 1857)
 │   ├── eurusd_binary.json  # Binary options configs
 │   └── xauusd_binary.json
 ├── core/                    # Detection engine (D0–D5)
@@ -44,9 +49,12 @@ pivot/
 │   ├── backtest.py          # BacktestEngine (bar-by-bar, no look-ahead)
 │   ├── storage.py           # SQLite persistence (ops, ML dataset, config)
 │   ├── feeds/
-│   │   ├── csv.py           # CSVFeed, MultiTimeframeFeed
-│   │   ├── csv_resample.py  # H1/H4/D1 derivation from M15
-│   │   └── deriv.py         # Deriv WebSocket feed
+│   │   ├── csv.py             # CSVFeed, MultiTimeframeFeed
+│   │   ├── csv_resample.py    # H1/H4/D1 derivation from M15
+│   │   ├── deriv.py           # Legacy Deriv feed (warm-up only)
+│   │   ├── iqoption_public.py # IQ Options public GraphQL client (read-only)
+│   │   └── iq_public_backfill.py # Synthetic M15 warm-up from charts
+│   ├── iq_public_runtime.py   # Runtime for IQ Options assets (SQLite → engine → signals)
 │   └── binary/              # Binary options module
 │       ├── payout.py        # Broker payout tables (Deriv, IQOption, Pocket, Quotex)
 │       ├── risk.py          # Risk modes (Fixed, Martingale, Anti-Martingale, Kelly, %)
@@ -62,14 +70,19 @@ pivot/
 │   ├── unit/                # 81 unit tests
 │   └── integration/         # API + backtest integration tests
 ├── scripts/
-│   ├── export_ml_dataset.py # ML dataset export (CSV/Parquet)
-│   └── run_deriv_ws.py      # Live WebSocket runner
+│   ├── export_ml_dataset.py  # ML dataset export (CSV/Parquet)
+│   ├── iq_public_collector.py # Persistent IQ Options tick/candle collector
+│   ├── vigia.py              # Watchdog (Tailscale only; no Deriv restarts)
+│   └── run_deriv_ws.py       # Legacy live WebSocket runner (unused)
 ├── docker-compose.yml       # 2 services (API, Frontend)
 ├── Dockerfile               # Multi-stage, non-root user
 ├── docs/                    # Specs, manual y notas de fases
 │   ├── especificacion_pivotradar_v8_sin_restricciones.md
 │   ├── SPEC_PV_TERMINAL.md  # Frontend redesign spec
-│   └── MANUAL_SISTEMA.md    # System manual
+│   ├── MANUAL_SISTEMA.md    # System manual
+│   ├── FUENTES_DATOS.md     # Current data-source architecture (sanitized)
+│   ├── INTEGRACION_IQ_OTC_FASE1.md
+│   └── INTEGRACION_IQ_OTC_FASE2.md
 └── requirements.txt
 ```
 
@@ -199,7 +212,8 @@ Vite proxies `/api` and `/ws` → `http://localhost:8000` (backend).
 
 | `fuente` | Origin | ntfy live |
 |----------|--------|-----------|
-| `deriv` | Live Deriv stream (`motor_v8` / `deriv_runtime`) | Only if `PIVOT_ALERTAS_LIVE=1` |
+| `iqoption_public` | IQ Options public read-only API (`iq_public_runtime` / `motor_v8`) | Only if `PIVOT_ALERTAS_LIVE=1` |
+| `deriv` | Legacy Deriv stream; CSV history is now used only for warm-up | Only if `PIVOT_ALERTAS_LIVE=1` |
 | `replay` | CSV replay runtime (`_replay_asset`) | Never |
 | `live_csv` | Replay from `data/live_*_m15.csv` | Never |
 | `backtest` | `POST /api/backtest` | Never |
@@ -210,7 +224,7 @@ Legacy rows with `tipo LIKE 'PIVOT_%'` are backfilled to `fuente='replay'`.
 
 ```bash
 # .env — default OFF (safe for testing)
-PIVOT_ALERTAS_LIVE=0   # set 1 only when trading live with real Deriv data
+PIVOT_ALERTAS_LIVE=0   # set 1 to deliver live alerts from the current market feed
 ```
 
 - Replay/backtest never send ntfy.
@@ -232,7 +246,7 @@ pip install -r requirements.txt
 pip install pytest pytest-cov
 
 # Env
-cp .env.example .env   # fill DERIV_* tokens; keep PIVOT_ALERTAS_LIVE=0 while testing
+cp .env.example .env   # no broker credentials needed; enable PIVOT_ALERTAS_LIVE only when ready
 
 # Docs & specs
 docs/  # specifications, system manual and phase notes
