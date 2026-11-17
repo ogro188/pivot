@@ -4,9 +4,10 @@
   "point": 0.01,
   "decimales": 2,
   "pip": 0.1,
-  "fuente_tipo": "deriv",
+  "fuente_tipo": "iqoption_public",
   "fuente_config": {
-    "instrumento": "frxXAUUSD"
+    "active_id": 74,
+    "provider_name": "XAUUSD"
   },
   "timeframes": [
     "M15",
@@ -17,6 +18,6 @@
   "horario_broker_utc": 2,
   "ntfy": {
     "topic": "radar_XAUUSD",
-    "server": "https://ntfy.sh"
+    "server": "http://127.0.0.1:8081"
   }
 }

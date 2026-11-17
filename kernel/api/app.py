@@ -43,6 +43,8 @@ _RUNTIME_TASKS: Dict[str, asyncio.Task] = {}
 _PRICES: Dict[str, float] = {}
 _DERIV_RUNTIME: Any = None
 _DERIV_STARTED: bool = False
+_IQ_PUBLIC_RUNTIME: Any = None
+_IQ_PUBLIC_STARTED: bool = False
 
 
 def _decimales_desde_punto(punto: float) -> int:
@@ -130,6 +132,43 @@ def _df_a_velas(df, n: int) -> List[Dict[str, Any]]:
             "volume": float(row.get("volume", 0) or 0),
         })
     return out
+
+
+def _fuente_tipo_activo(simbolo: str) -> str:
+    """Lee ``fuente_tipo`` del JSON del activo (csv si no se puede leer)."""
+    path_json = f"activos/{simbolo.lower()}.json"
+    try:
+        with open(path_json, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return str(data.get("fuente_tipo") or "csv").lower()
+    except Exception:
+        return "csv"
+
+
+def _ruta_csv_backtest(simbolo: str, timeframe: str) -> str:
+    """CSV de backtest: primero ``data/``, luego el export del collector OTC."""
+    directo = f"data/{simbolo.lower()}_{timeframe.lower()}.csv"
+    if os.path.exists(directo):
+        return directo
+    if _fuente_tipo_activo(simbolo) == "iqoption_public":
+        return f"data/iq_public/export/{simbolo.lower()}_{timeframe.lower()}.csv"
+    return directo
+
+
+def _cargar_velas_iq_public(simbolo: str, tf: str, count: int) -> Optional[List[Dict[str, Any]]]:
+    """Velas del buffer OTC (SQLite del collector), si el activo está integrado.
+
+    Devuelve None si el símbolo no pertenece al runtime OTC.
+    """
+    stream = _IQ_PUBLIC_RUNTIME.streams.get(simbolo) if _IQ_PUBLIC_RUNTIME else None
+    if not stream:
+        return None
+    try:
+        velas = stream.history(tf, count)
+    except Exception as e:
+        logger.error(f"Error leyendo historial OTC de {simbolo}: {e}")
+        return None
+    return velas or None
 
 
 def _cargar_velas_deriv(simbolo: str, tf: str, count: int) -> Optional[List[Dict[str, Any]]]:
@@ -391,15 +430,120 @@ async def _iniciar_deriv():
         return None
 
 
+async def _iniciar_iq_public():
+    """Arranca el runtime OTC que lee la SQLite del collector (solo lectura)."""
+    global _IQ_PUBLIC_RUNTIME, _IQ_PUBLIC_STARTED
+    if _IQ_PUBLIC_STARTED:
+        return _IQ_PUBLIC_RUNTIME
+    _IQ_PUBLIC_STARTED = True
+    try:
+        from kernel.iq_public_runtime import IQPublicRuntime
+        from kernel.activos_loader import listar_activos_disponibles, cargar_activo
+        from kernel.storage import get_database
+
+        configs: Dict[str, Dict[str, Any]] = {}
+        for simbolo in listar_activos_disponibles():
+            path_json = f"activos/{simbolo.lower()}.json"
+            if not os.path.exists(path_json):
+                continue
+            try:
+                with open(path_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                logger.error(f"JSON de activo OTC corrupto ({path_json}): {e}")
+                continue
+            if (data.get("fuente_tipo") or "").lower() != "iqoption_public":
+                continue
+            try:
+                activo = cargar_activo(simbolo)
+            except ValueError:
+                continue
+            fuente_cfg = data.get("fuente_config") or {}
+            ntfy_cfg = data.get("ntfy") or {}
+            configs[simbolo] = {
+                "activo": activo,
+                "provider_name": fuente_cfg.get("provider_name") or simbolo.upper(),
+                "active_id": fuente_cfg.get("active_id"),
+                "punto": activo.punto,
+                "visible": bool(data.get("visible", False)),
+                "ntfy_topic": str(ntfy_cfg.get("topic") or ""),
+                "ntfy_server": str(ntfy_cfg.get("server") or ""),
+            }
+
+        if not configs:
+            logger.info("Sin activos de fuente iqoption_public, runtime OTC no arranca")
+            return None
+
+        db = get_database()
+        db.initialize()
+
+        _IQ_PUBLIC_RUNTIME = IQPublicRuntime(activos=configs, db=db)
+        await _IQ_PUBLIC_RUNTIME.start()
+        logger.info(f"Runtime IQ OTC iniciado para: {list(configs.keys())}")
+        return _IQ_PUBLIC_RUNTIME
+    except Exception as e:
+        logger.error(f"Error iniciando runtime IQ OTC: {e}")
+        return None
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     await _iniciar_deriv()
+    await _iniciar_iq_public()
     yield
+    if _IQ_PUBLIC_RUNTIME:
+        try:
+            await _IQ_PUBLIC_RUNTIME.stop()
+        except Exception as e:
+            logger.error(f"Error deteniendo runtime IQ OTC: {e}")
     if _DERIV_RUNTIME:
         try:
             await _DERIV_RUNTIME.stop()
         except Exception as e:
             logger.error(f"Error deteniendo runtime Deriv: {e}")
+
+
+def _muestrear_equity(equity_raw, max_puntos: int = 600) -> List[List[Any]]:
+    """Convierte la curva de equity a [ts_ms, valor] muestreando sin perder extremos."""
+    puntos = [[int(ts.timestamp() * 1000), round(float(v), 2)] for ts, v in equity_raw]
+    n = len(puntos)
+    if n <= max_puntos:
+        return puntos
+    paso = (n - 1) / (max_puntos - 1)
+    idx = sorted({min(n - 1, max(0, int(round(i * paso)))) for i in range(max_puntos)} | {0, n - 1})
+    return [puntos[i] for i in idx]
+
+
+def _iso(ts: Any) -> Optional[str]:
+    if ts is None:
+        return None
+    if hasattr(ts, "isoformat"):
+        return ts.isoformat()
+    return str(ts)
+
+
+def _serializar_operaciones(ops: Any) -> List[Dict[str, Any]]:
+    """Serializa Operacion (dataclass del motor) a dicts para la respuesta JSON."""
+    out: List[Dict[str, Any]] = []
+    for op in ops or []:
+        out.append(
+            {
+                "id": getattr(op, "id_operacion", None),
+                "simbolo": getattr(op, "simbolo", None),
+                "direccion": int(getattr(op, "direccion", 0) or 0),
+                "precio_entrada": getattr(op, "precio_entrada", None),
+                "precio_salida": getattr(op, "precio_salida", None),
+                "timestamp_entrada": _iso(getattr(op, "timestamp_entrada", None)),
+                "timestamp_salida": _iso(getattr(op, "timestamp_salida", None)),
+                "stop_loss": getattr(op, "stop_loss", None),
+                "take_profit": getattr(op, "take_profit", None),
+                "razon_salida": getattr(op, "razon_salida", None),
+                "pnl_puntos": round(float(getattr(op, "pnl_puntos", 0.0) or 0.0), 2),
+                "pnl_dinero": round(float(getattr(op, "pnl_dinero", 0.0) or 0.0), 2),
+                "velas_en_operacion": getattr(op, "velas_en_operacion", 0),
+            }
+        )
+    return out
 
 
 def create_app() -> FastAPI:
@@ -448,12 +592,19 @@ def create_app() -> FastAPI:
         deriv = None
         if _DERIV_RUNTIME:
             deriv = _DERIV_RUNTIME.status()
+        iq_public = None
+        if _IQ_PUBLIC_RUNTIME:
+            try:
+                iq_public = _IQ_PUBLIC_RUNTIME.status()
+            except Exception as e:
+                logger.error(f"Error leyendo estado IQ OTC: {e}")
         return {
             "status": "healthy",
             "version": "2.0.0",
             "strategies_loaded": len(registro.listar()),
             "deriv_connected": bool(deriv and deriv.get("connected")),
             "deriv": deriv,
+            "iq_public": iq_public,
         }
 
     @app.get("/api/deriv/status")
@@ -495,18 +646,32 @@ def create_app() -> FastAPI:
 
             running = _RUNNING.get(activo.simbolo, False)
 
+            # Los activos OTC permanecen ocultos del panel hasta validar el
+            # histórico. Se cargan igual en el runtime, pero no se listan.
+            if extra.get("visible", True) is False:
+                continue
+
             # Estado de conexión Deriv del activo (si aplica)
             deriv_stream = None
             if _DERIV_RUNTIME:
                 deriv_stream = _DERIV_RUNTIME.streams.get(activo.simbolo)
             deriv_connected = bool(deriv_stream and deriv_stream.connected)
+
+            # Estado de conexión OTC (lectura de la SQLite del collector)
+            iq_stream = None
+            if _IQ_PUBLIC_RUNTIME:
+                iq_stream = _IQ_PUBLIC_RUNTIME.streams.get(activo.simbolo)
+            iq_connected = bool(iq_stream and iq_stream.connected)
+
             fuente = extra.get("fuente_tipo", "csv")
             if fuente == "deriv" and not deriv_stream:
                 fuente = "csv"  # el activo es deriv pero no hay stream activo
 
             precio = _PRICES.get(activo.simbolo)
             price = None
-            if deriv_stream and deriv_stream.price is not None:
+            if iq_stream and iq_stream.price is not None:
+                price = iq_stream.price
+            elif deriv_stream and deriv_stream.price is not None:
                 price = deriv_stream.price
             elif precio is not None:
                 price = precio
@@ -534,8 +699,9 @@ def create_app() -> FastAPI:
                 "activo": True,
                 "fuente": fuente,
                 "running": running,
-                "connected": deriv_connected or running,
+                "connected": deriv_connected or iq_connected or running,
                 "deriv_connected": deriv_connected,
+                "iq_public_connected": iq_connected,
                 "price": price,
                 "session": _session_actual(),
                 "kill_zone": _kill_zone_actual(),
@@ -565,7 +731,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/assets/{simbolo}/history")
     async def get_asset_history(simbolo: str, tf: str = "M15", count: int = 200) -> List[Dict[str, Any]]:
-        """Obtiene velas históricas para el chart. Prioriza el stream real de Deriv."""
+        """Obtiene velas históricas para el chart. Prioriza OTC y luego Deriv."""
+        iq_public = _cargar_velas_iq_public(simbolo.upper(), tf, count)
+        if iq_public is not None:
+            return iq_public
         deriv = _cargar_velas_deriv(simbolo, tf, count)
         if deriv is not None:
             return deriv
@@ -628,6 +797,18 @@ def create_app() -> FastAPI:
         if _RUNNING.get(activo.simbolo, False):
             return {"status": "ok", "simbolo": activo.simbolo, "running": True}
 
+        # OTC: el collector es el único que produce datos; este endpoint no
+        # debe lanzar un replay CSV sobre un símbolo sintético.
+        if _fuente_tipo_activo(activo.simbolo) == "iqoption_public":
+            stream = _IQ_PUBLIC_RUNTIME.streams.get(activo.simbolo) if _IQ_PUBLIC_RUNTIME else None
+            return {
+                "status": "ok",
+                "simbolo": activo.simbolo,
+                "running": bool(stream and stream.running),
+                "runtime": "iq_public",
+                "readonly": True,
+            }
+
         data_path = f"data/{activo.simbolo.lower()}_m15.csv"
         if not os.path.exists(data_path):
             raise HTTPException(
@@ -648,6 +829,16 @@ def create_app() -> FastAPI:
             activo = cargar_activo(simbolo)
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
+
+        if _fuente_tipo_activo(activo.simbolo) == "iqoption_public":
+            stream = _IQ_PUBLIC_RUNTIME.streams.get(activo.simbolo) if _IQ_PUBLIC_RUNTIME else None
+            return {
+                "status": "ok",
+                "simbolo": activo.simbolo,
+                "running": bool(stream and stream.running),
+                "runtime": "iq_public",
+                "readonly": True,
+            }
 
         _RUNNING[activo.simbolo] = False
         task = _RUNTIME_TASKS.pop(activo.simbolo, None)
@@ -674,6 +865,8 @@ def create_app() -> FastAPI:
             if stream and stream.engine:
                 stream.engine.alertas.ntfy_topic = topic
                 stream.engine.alertas.ntfy_server = server.rstrip("/")
+        # OTC: el motor sigue silenciado (IQ_PUBLIC_SIGNALS_NTFY_TOPIC) hasta
+        # validar el histórico; el topic guardado no se aplica todavía.
         return {"status": "ok", "simbolo": simbolo, "topic": topic, "server": server}
 
     @app.post("/api/assets/{simbolo}/ntfy/test")
@@ -724,7 +917,7 @@ def create_app() -> FastAPI:
 
         estrategia_instancia = registro.fabricar(request["estrategia"])
 
-        data_path = f"data/{request['activo'].lower()}_{request['timeframe'].lower()}.csv"
+        data_path = _ruta_csv_backtest(request["activo"], request["timeframe"])
         if not os.path.exists(data_path):
             raise HTTPException(
                 status_code=404,
@@ -760,7 +953,18 @@ def create_app() -> FastAPI:
         )
 
         equity_raw = getattr(resultado, "equity_curve", [])
-        equity = [[int(ts.timestamp() * 1000), round(float(v), 2)] for ts, v in equity_raw[-100:]]
+        equity = _muestrear_equity(equity_raw, max_puntos=600)
+
+        operaciones = _serializar_operaciones(getattr(resultado, "operaciones", []))
+
+        # Persistir para el historial (SOLO LECTURA luego desde GET /api/backtests)
+        try:
+            from kernel.storage import get_database
+            _db = get_database()
+            _db.initialize()
+            await _db.guardar_backtest(resultado, parametros=request.get("parametros", {}))
+        except Exception as e:
+            logger.warning(f"No se pudo persistir el backtest: {e}")
 
         return {
             "status": "completed",
@@ -773,7 +977,119 @@ def create_app() -> FastAPI:
             "capital_inicial": resultado.capital_inicial,
             "capital_final": resultado.capital_final,
             "equity": equity,
+            "operaciones": operaciones,
             **resultado.to_dict(),
+        }
+
+    # =========================================================================
+    # Endpoints de SOLO LECTURA (analytics / historial) — sin lógica de negocio
+    # =========================================================================
+
+    def _serializar_backtest(r: Dict[str, Any]) -> Dict[str, Any]:
+        def _json(v, fallback):
+            if isinstance(v, str) and v.strip():
+                try:
+                    return json.loads(v)
+                except (ValueError, TypeError):
+                    return fallback
+            return fallback
+
+        return {
+            "id": r.get("id"),
+            "estrategia": r.get("estrategia"),
+            "simbolo": r.get("simbolo"),
+            "timeframe": r.get("timeframe"),
+            "fecha_inicio": r.get("fecha_inicio"),
+            "fecha_fin": r.get("fecha_fin"),
+            "capital_inicial": r.get("capital_inicial"),
+            "capital_final": r.get("capital_final"),
+            "retorno_total": r.get("retorno_total"),
+            "win_rate": r.get("win_rate"),
+            "total_operaciones": r.get("total_operaciones"),
+            "profit_factor": r.get("profit_factor"),
+            "sharpe_ratio": r.get("sharpe_ratio"),
+            "drawdown_max": r.get("drawdown_max"),
+            "parametros": _json(r.get("parametros"), {}),
+            "metricas": _json(r.get("metricas_json"), {}),
+            "created_at": r.get("created_at"),
+        }
+
+    @app.get("/api/backtests")
+    async def listar_backtests(estrategia: Optional[str] = None, limite: int = 50) -> List[Dict[str, Any]]:
+        """Historial de backtests persistidos, ordenado del más reciente."""
+        from kernel.storage import get_database
+        db = get_database()
+        db.initialize()
+        rows = await db.obtener_backtests(
+            estrategia=estrategia or None,
+            limite=max(1, min(limite, 500)),
+        )
+        return [_serializar_backtest(r) for r in rows]
+
+    @app.get("/api/backtests/{backtest_id}")
+    async def obtener_backtest(backtest_id: int) -> Dict[str, Any]:
+        """Detalle de un backtest puntual."""
+        from kernel.storage import get_database
+        db = get_database()
+        db.initialize()
+        rows = await db.fetchall_async("SELECT * FROM backtests WHERE id=?", (backtest_id,))
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"Backtest {backtest_id} no encontrado")
+        return _serializar_backtest(rows[0])
+
+    @app.get("/api/operaciones")
+    async def listar_operaciones(
+        estrategia: Optional[str] = None,
+        simbolo: Optional[str] = None,
+        limite: int = 200,
+    ) -> List[Dict[str, Any]]:
+        """Historial de operaciones cerradas/abiertas con su PnL."""
+        from kernel.storage import get_database
+        db = get_database()
+        db.initialize()
+        rows = await db.obtener_historico_operaciones(
+            estrategia=estrategia or None,
+            simbolo=simbolo.upper() if simbolo else None,
+            limite=max(1, min(limite, 2000)),
+        )
+        return [dict(r) for r in rows]
+
+    @app.get("/api/analitica/detectores")
+    async def analitica_detectores() -> Dict[str, Any]:
+        """Win rate por combinación de detectores a partir del dataset ML."""
+        from kernel.storage import get_database
+        db = get_database()
+        db.initialize()
+        stats = db.obtener_estadisticas_ml_dataset()
+        return stats
+
+    @app.get("/api/analitica/resumen")
+    async def analitica_resumen() -> Dict[str, Any]:
+        """Contadores globales para el panel de control."""
+        from kernel.storage import get_database
+        db = get_database()
+        db.initialize()
+
+        def _count(row: Dict[str, Any]) -> int:
+            return int(next(iter(row.values()), 0) or 0)
+
+        senales = _count(await db.fetchone_async("SELECT COUNT(*) AS n FROM senales_core"))
+        operaciones = _count(await db.fetchone_async("SELECT COUNT(*) AS n FROM operaciones"))
+        cerradas = _count(
+            await db.fetchone_async("SELECT COUNT(*) AS n FROM operaciones WHERE estado != 'ABIERTA'")
+        )
+        ganadoras = _count(
+            await db.fetchone_async("SELECT COUNT(*) AS n FROM operaciones WHERE pnl > 0")
+        )
+        backtests = _count(await db.fetchone_async("SELECT COUNT(*) AS n FROM backtests"))
+        winrate = round((ganadoras / cerradas) * 100, 2) if cerradas else None
+        return {
+            "senales": senales,
+            "operaciones": operaciones,
+            "operaciones_cerradas": cerradas,
+            "operaciones_ganadoras": ganadoras,
+            "backtests": backtests,
+            "winrate": winrate,
         }
 
     @app.post("/api/config/ntfy")

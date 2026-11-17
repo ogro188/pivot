@@ -1,0 +1,14 @@
+[Unit]
+Description=PIVOT OTC - exportar velas a CSV para backtest
+After=iq-public-collector.service
+ConditionPathExists=/opt/pivot/pivotradar_data/iq_public/iq_public.db
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/pivot
+Environment=PYTHONPATH=/opt/pivot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /opt/pivot/scripts/iq_public_collector.py --export --db /opt/pivot/pivotradar_data/iq_public/iq_public.db --out-dir /opt/pivot/data/iq_public/export
+ProtectSystem=full
+ReadWritePaths=/tmp /opt/pivot
+NoNewPrivileges=yes

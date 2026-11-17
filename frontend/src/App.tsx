@@ -4,6 +4,9 @@ import NavBar from './components/NavBar'
 import { useEffect, useRef } from 'react'
 import { useStore } from './store'
 import { fetchAssets, fetchSignals } from './api'
+import { useToast, Skeleton, SkeletonCard } from './components/ui'
+import { describeError } from './utils/errors'
+import { esAltaConfianza } from './utils/signals'
 
 const HubPage = lazy(() => import('./pages/HubPage'))
 const ActivoPage = lazy(() => import('./pages/ActivoPage'))
@@ -25,6 +28,7 @@ function App() {
   const soundQueue = useStore((s) => s.soundQueue)
   const clearSoundQueue = useStore((s) => s.clearSoundQueue)
   const setPushNotificationsEnabled = useStore((s) => s.setPushNotificationsEnabled)
+  const toast = useToast()
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lastSoundTime = useRef(0)
@@ -35,24 +39,42 @@ function App() {
     audioRef.current.volume = 0.3
   }, [])
 
-  // Hidratar globalSignals desde la API al montar
+  // Hidratar globalSignals desde la API al montar. El marcador en sessionStorage
+  // solo se escribe si la hidratación termina bien, para que un fallo se reintente
+  // en la próxima carga en lugar de dejar el panel de señales vacío en silencio.
+  const hidrataRef = useRef(false)
   useEffect(() => {
-    const hydrated = sessionStorage.getItem('signals_hydrated')
-    if (hydrated) return
-    fetchAssets().then((assets: any[]) => {
-      const symbols = assets.map((a: any) => a.simbolo).filter(Boolean)
-      return Promise.all(symbols.map((s: string) => fetchSignals(s, 50).catch(() => [])))
-    }).then((results) => {
-      const all = results.flat().sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
-      const store = useStore.getState()
-      for (const sig of all) {
-        if (!store.globalSignals.find((s: any) => s.id === sig.id)) {
-          store.addSignal(sig)
+    if (hidrataRef.current) return
+    hidrataRef.current = true
+    if (sessionStorage.getItem('signals_hydrated') === '1') return
+
+    let cancelado = false
+
+    fetchAssets()
+      .then((assets: any[]) => {
+        const symbols = assets.map((a: any) => a.simbolo).filter(Boolean)
+        return Promise.all(symbols.map((s: string) => fetchSignals(s, 50).catch(() => [])))
+      })
+      .then((results) => {
+        if (cancelado) return
+        const all = results.flat().sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
+        const store = useStore.getState()
+        for (const sig of all) {
+          if (!store.globalSignals.find((s: any) => s.id === sig.id)) {
+            store.addSignal(sig)
+          }
         }
-      }
-      sessionStorage.setItem('signals_hydrated', '1')
-    }).catch(() => {})
-  }, [])
+        sessionStorage.setItem('signals_hydrated', '1')
+      })
+      .catch((err) => {
+        if (cancelado) return
+        toast.error(describeError(err), 'Señales históricas')
+      })
+
+    return () => {
+      cancelado = true
+    }
+  }, [toast])
 
   // Reproducir sonido si está habilitado y pasó el cooldown
   const playAlertSound = () => {
@@ -78,11 +100,7 @@ function App() {
     }
   }, [setPushNotificationsEnabled])
 
-  const isHighConfidence = (signal: any) => {
-    const conv = signal.conviccion || ''
-    const confMin = signal.confianza?.[0] || 0
-    return conv === 'ALTA' || confMin > 70
-  }
+  const isHighConfidence = (signal: any) => esAltaConfianza(signal)
 
   const sendPushNotification = (signal: any) => {
     if (!useStore.getState().pushNotificationsEnabled || !isHighConfidence(signal)) return
@@ -166,10 +184,28 @@ function App() {
   }, [setWsConnected, addSignal, addLog, setAssetPrice, upsertCandle, setDerivConnected, setDerivAssets])
 
   return (
-    <div className="min-h-screen bg-base-bg text-text-primary">
+    <div className="min-h-screen flex flex-col bg-base-bg text-text-primary">
+      <a
+        href="#contenido"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-base-panel focus:border focus:border-brand-cyan focus:text-text-primary focus:px-3 focus:py-2 focus:text-xs"
+      >
+        Saltar al contenido principal
+      </a>
       <NavBar />
-      <main className="p-3">
-        <Suspense fallback={<div className="p-4 text-text-muted">Cargando…</div>}>
+      <main id="contenido" className="flex-1 w-full max-w-[1680px] mx-auto p-3 sm:p-4">
+        <Suspense
+          fallback={
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-48 rounded-sm" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+            </div>
+          }
+        >
           <Routes>
             <Route path="/" element={<HubPage />} />
             <Route path="/activo/:simbolo" element={<ActivoPage />} />

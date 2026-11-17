@@ -9,6 +9,35 @@ from threading import Lock
 
 logger = logging.getLogger(__name__)
 
+# Unica fuente de verdad del esquema ML: se usa al escribir y al leer.
+DDL_SIGNALS_ML_DATASET = """
+CREATE TABLE IF NOT EXISTS signals_ml_dataset (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp_entrada TEXT NOT NULL,
+    timestamp_salida TEXT,
+    simbolo TEXT NOT NULL,
+    direccion INTEGER NOT NULL,
+    detectores_activos TEXT NOT NULL,
+    g_atr8 REAL,
+    g_atr14 REAL,
+    g_atr50 REAL,
+    g_ema50_dist REAL,
+    g_ema50_angulo REAL,
+    g_rsi14 REAL,
+    g_d1_trend INTEGER,
+    g_h4_trend INTEGER,
+    g_volatilidad REAL,
+    g_zona TEXT,
+    sesion TEXT,
+    zona_premium_discount TEXT,
+    pnl_puntos REAL,
+    razon_salida TEXT,
+    fue_ganadora INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+
 class Database:
     """Gestor de base de datos SQLite thread-safe"""
     
@@ -113,6 +142,10 @@ class Database:
             processed BOOLEAN DEFAULT 0
         )""")
         
+        # Tabla ML: existe desde la inicializacion para que las lecturas
+        # (estadisticas / export) no fallen en una base recien creada.
+        cursor.execute(DDL_SIGNALS_ML_DATASET)
+
         conn.commit()
         self._initialized = True
         logger.info(f"Base de datos inicializada: {self.db_path}")
@@ -314,33 +347,7 @@ class Database:
         with self._lock:
             cursor = self._get_connection().cursor()
             
-            # Crear tabla si no existe
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS signals_ml_dataset (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp_entrada TEXT NOT NULL,
-                    timestamp_salida TEXT,
-                    simbolo TEXT NOT NULL,
-                    direccion INTEGER NOT NULL,
-                    detectores_activos TEXT NOT NULL,
-                    g_atr8 REAL,
-                    g_atr14 REAL,
-                    g_atr50 REAL,
-                    g_ema50_dist REAL,
-                    g_ema50_angulo REAL,
-                    g_rsi14 REAL,
-                    g_d1_trend INTEGER,
-                    g_h4_trend INTEGER,
-                    g_volatilidad REAL,
-                    g_zona TEXT,
-                    sesion TEXT,
-                    zona_premium_discount TEXT,
-                    pnl_puntos REAL,
-                    razon_salida TEXT,
-                    fue_ganadora INTEGER,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            cursor.execute(DDL_SIGNALS_ML_DATASET)
             
             # Extraer G metrics si existen
             g_metrics = operacion_dict.get('g_metrics', {})
@@ -401,6 +408,7 @@ class Database:
     
     def obtener_estadisticas_ml_dataset(self) -> dict:
         """Obtiene estadísticas básicas del dataset ML."""
+        self.initialize()
         with self._lock:
             cursor = self._get_connection().cursor()
             

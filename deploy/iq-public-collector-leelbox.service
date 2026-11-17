@@ -1,0 +1,28 @@
+[Unit]
+Description=PIVOT OTC collector (IQ Option public GraphQL, read-only)
+Documentation=file:/opt/pivot/docs/INTEGRACION_IQ_OTC_FASE1.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pivot
+Environment=PYTHONPATH=/opt/pivot
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=IQ_PUBLIC_DB=/opt/pivot/pivotradar_data/iq_public/iq_public.db
+Environment=IQ_PUBLIC_EXPORT_DIR=/opt/pivot/pivotradar_data/iq_public/export
+Environment=IQ_PUBLIC_NTFY_TOPIC=radar_OTC_health
+Environment=IQ_PUBLIC_NTFY_SERVER=http://127.0.0.1:8081
+Environment=IQ_PUBLIC_KEEP_TICKS_DAYS=14
+EnvironmentFile=-/etc/pivot-ntfy.env
+ExecStart=/usr/bin/python3 /opt/pivot/scripts/iq_public_collector.py --loop
+Restart=always
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

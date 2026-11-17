@@ -115,7 +115,7 @@ class AlertasEngine:
         url = f"{self.ntfy_server}/{self.ntfy_topic}"
         headers = {"Content-Type": "text/plain"}
         try:
-            resp = requests.post(url, data=text.encode("utf-8"), headers=headers, timeout=3)
+            resp = requests.post(url, data=text.encode("utf-8"), headers=headers, timeout=10)
             if resp.status_code == 200:
                 self.g_last_ntfy_time = datetime.now(timezone.utc)
                 return True

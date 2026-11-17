@@ -12,12 +12,10 @@
   ::-webkit-scrollbar-track { @apply bg-base-panel; }
   ::-webkit-scrollbar-thumb { @apply bg-base-line; }
   ::-webkit-scrollbar-thumb:hover { @apply bg-text-muted; }
-  :focus-visible { outline: 2px solid #37E0C4; outline-offset: 1px; }
+  :focus-visible { @apply outline-2 outline-brand-cyan outline-offset-1; }
 }
 
 @layer components {
   .tabular { font-variant-numeric: tabular-nums; @apply font-mono; }
   .panel { @apply bg-base-panel border border-base-line; }
-  .hairline-b { @apply border-b border-base-line; }
-  .hairline-t { @apply border-t border-base-line; }
 }

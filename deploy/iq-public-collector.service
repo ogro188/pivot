@@ -1,0 +1,20 @@
+[Unit]
+Description=PIVOT OTC collector (IQ Option public GraphQL, read-only)
+Documentation=file:/home/ogro/pivot/docs/INTEGRACION_IQ_OTC_FASE1.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ogro/pivot
+ExecStart=/home/ogro/pivot/.venv/bin/python scripts/iq_public_collector.py --loop
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/ogro/pivot/.env.iq_public
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

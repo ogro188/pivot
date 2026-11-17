@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchAssetNtfy, saveAssetNtfy, testAssetNtfy } from '../api'
+import { Button, FieldLabel, useToast } from './ui'
+import { describeError } from '../utils/errors'
 
 interface AssetNtfyFormProps {
   simbolo: string
@@ -7,82 +9,110 @@ interface AssetNtfyFormProps {
 }
 
 export default function AssetNtfyForm({ simbolo, compact = false }: AssetNtfyFormProps) {
+  const toast = useToast()
   const [topic, setTopic] = useState('')
   const [server, setServer] = useState('https://ntfy.sh')
-  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testing, setTesting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<unknown>(null)
 
   useEffect(() => {
-    fetchAssetNtfy(simbolo).then((cfg) => {
-      setTopic(cfg.topic || '')
-      setServer(cfg.server || 'https://ntfy.sh')
-    }).catch(() => {})
+    let cancel = false
+    setLoadError(null)
+    fetchAssetNtfy(simbolo)
+      .then((cfg) => {
+        if (cancel) return
+        setTopic(cfg.topic || '')
+        setServer(cfg.server || 'https://ntfy.sh')
+      })
+      .catch((err) => {
+        if (!cancel) setLoadError(err)
+      })
+    return () => {
+      cancel = true
+    }
   }, [simbolo])
 
   const handleSave = async () => {
+    setSaving(true)
     try {
       await saveAssetNtfy(simbolo, topic, server)
-      setStatus({ ok: true, msg: 'Configuración guardada' })
-    } catch {
-      setStatus({ ok: false, msg: 'Error al guardar' })
+      toast.success(`Topic de ${simbolo} guardado.`, 'Guardado')
+    } catch (err) {
+      toast.error(describeError(err), `No se pudo guardar ${simbolo}`)
+    } finally {
+      setSaving(false)
     }
   }
 
   const handleTest = async () => {
     setTesting(true)
-    setStatus(null)
     try {
       const res = await testAssetNtfy(simbolo)
-      setStatus({ ok: !!res.ok, msg: res.detail || (res.ok ? 'Notificación enviada' : 'Falló') })
-    } catch {
-      setStatus({ ok: false, msg: 'Error de conexión' })
+      if (res.ok) {
+        toast.success(res.detail || `Notificación enviada a ${simbolo}.`, 'Test enviado')
+      } else {
+        toast.error(res.detail || 'El servidor ntfy rechazó el mensaje.', 'Test fallido')
+      }
+    } catch (err) {
+      toast.error(describeError(err), 'Sin conexión con ntfy')
     } finally {
       setTesting(false)
     }
   }
 
-  if (compact) {
-    return (
-      <div className="space-y-1.5">
-        <div>
-          <label htmlFor={`ntfy-${simbolo}-topic`} className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
-          <input id={`ntfy-${simbolo}-topic`} className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="mi-topic-secreto" />
-        </div>
-        <div>
-          <label htmlFor={`ntfy-${simbolo}-server`} className="block font-condensed text-[10px] tracking-widest text-text-muted uppercase mb-1">Server</label>
-          <input id={`ntfy-${simbolo}-server`} className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-xs text-text-primary" value={server} onChange={(e) => setServer(e.target.value)} placeholder="https://ntfy.sh" />
-        </div>
-        <div className="flex gap-2 pt-1">
-          <button onClick={handleSave} className="flex-1 bg-base-panel2 hover:bg-base-line text-text-secondary px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors">
-            Guardar
-          </button>
-          <button onClick={handleTest} disabled={testing || !topic} className={`flex-1 px-2 py-1 font-condensed text-[10px] tracking-widest uppercase transition-colors ${testing || !topic ? 'bg-base-panel2 border border-base-line text-text-muted cursor-default' : 'border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10'}`}>
-            {testing ? 'Probando…' : 'Test'}
-          </button>
-        </div>
-        {status && (
-          <div className={`text-[10px] font-condensed tracking-wide ${status.ok ? 'text-brand-cyan' : 'text-red-400'}`}>
-            {status.msg}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div>
-        <label htmlFor={`ntfy-${simbolo}-topic`} className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Topic</label>
-        <input id={`ntfy-${simbolo}-topic`} className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="mi-topic-secreto" />
+        <FieldLabel htmlFor={`ntfy-${simbolo}-topic`}>Topic</FieldLabel>
+        <input
+          id={`ntfy-${simbolo}-topic`}
+          className="w-full bg-base-panel2 border border-base-edge px-2 py-1.5 text-xs text-text-primary"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="mi-topic-secreto"
+          autoComplete="off"
+        />
       </div>
-      <div>
-        <label htmlFor={`ntfy-${simbolo}-server`} className="block font-condensed text-[11px] tracking-widest text-text-muted uppercase mb-1">Server</label>
-        <input id={`ntfy-${simbolo}-server`} className="w-full bg-base-panel2 border border-base-line px-2 py-1 text-sm text-text-primary" value={server} onChange={(e) => setServer(e.target.value)} />
+      {!compact && (
+        <div>
+          <FieldLabel htmlFor={`ntfy-${simbolo}-server`}>Server</FieldLabel>
+          <input
+            id={`ntfy-${simbolo}-server`}
+            className="w-full bg-base-panel2 border border-base-edge px-2 py-1.5 text-xs text-text-primary"
+            value={server}
+            onChange={(e) => setServer(e.target.value)}
+            placeholder="https://ntfy.sh"
+          />
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2 pt-0.5">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={handleSave}
+          loading={saving}
+          fullWidth
+        >
+          Guardar
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon="bell"
+          onClick={handleTest}
+          loading={testing}
+          disabled={!topic.trim()}
+          fullWidth
+        >
+          {testing ? 'Probando…' : 'Test'}
+        </Button>
       </div>
-      <button onClick={handleSave} className="border border-brand-cyan/50 text-brand-cyan hover:bg-brand-cyan/10 px-4 py-1.5 font-condensed text-[11px] tracking-widest uppercase transition-colors">
-        Guardar
-      </button>
-      {status && <div className="text-sm text-text-secondary">{status.msg}</div>}
+      {loadError !== null && (
+        <p className="text-[10px] text-state-warn" role="status">
+          No se pudo leer la config guardada. {describeError(loadError)}
+        </p>
+      )}
     </div>
   )
 }

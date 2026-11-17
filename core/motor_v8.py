@@ -945,7 +945,7 @@ class PivotRadarEngine:
                 hipotesis_expiry_velas=sig.hipotesis_expiry_velas or 0,
                 conviccion=sig.conviccion or 0.0,
                 regimen_volatilidad=sig.regimen_volatilidad or "",
-                fuente="deriv",
+                fuente="iqoption_public",
             ))
             loop.close()
             sig.csv_written = True
@@ -1063,7 +1063,7 @@ class PivotRadarEngine:
                     hipotesis_expiry_velas=s.hipotesis_expiry_velas or 0,
                     conviccion=s.conviccion or 0.0,
                     regimen_volatilidad=s.regimen_volatilidad or "",
-                    fuente="deriv",
+                    fuente="iqoption_public",
                 ))
                 loop.close()
                 s.csv_written = True

@@ -21,6 +21,8 @@ interface ChartHostProps {
   onVisibleRangeChange?: (range: VisibleRange) => void
 }
 
+const EMPTY_SIGNALS: SignalDTO[] = []
+
 function toChartBar(c: CandleDTO) {
   return {
     ts: c.time * 1000,
@@ -32,13 +34,21 @@ function toChartBar(c: CandleDTO) {
   }
 }
 
-export default function ChartHost({ candles, signals = [], height = 400, asset, id, toolbar = true, syncGroup, visibleRange, onVisibleRangeChange }: ChartHostProps) {
+export default function ChartHost({ candles, signals = EMPTY_SIGNALS, height = 400, asset, id, toolbar = true, syncGroup, visibleRange, onVisibleRangeChange }: ChartHostProps) {
   const markersRef = useRef<ISeriesMarkersPluginApi<UTCTimestamp> | null>(null)
   const controllerRef = useRef<ChartController | null>(null)
   const idRef = useRef(id)
   const [ready, setReady] = useState(false)
   const storageKey = `drawings:${id || asset?.simbolo || 'chart'}`
   const syncingRef = useRef(false)
+
+  // IDENTIDAD ESTABLE: ChartView memoriza DrawingController con [drawing].
+  // Si este objeto cambia en cada render se recrea el engine y se pierde
+  // la herramienta activa (activeTool vuelve a null) junto con el estado de dibujo.
+  const drawing = useMemo(
+    () => (toolbar ? { storageKey } : undefined),
+    [toolbar, storageKey]
+  )
 
   const indicators = useMemo(() => {
     const c = new IndicatorController(createBuiltinRegistry())
@@ -88,8 +98,8 @@ export default function ChartHost({ candles, signals = [], height = 400, asset, 
       theme="dark"
       showVolume
       autoFit
-      drawing={toolbar ? { storageKey } : undefined}
-      indicators={toolbar ? indicators : undefined}
+      drawing={drawing}
+      indicators={drawing ? indicators : undefined}
       style={{ height, width: '100%' }}
       className="w-full rounded-sm overflow-hidden"
       onReady={({ controller }) => {

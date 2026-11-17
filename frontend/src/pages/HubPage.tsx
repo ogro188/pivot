@@ -4,11 +4,25 @@ import { Link } from 'react-router-dom'
 import { fetchAssets } from '../api'
 import { useStore } from '../store'
 import SignalCard from '../components/SignalCard'
-import SignalCountdown from '../components/SignalCountdown'
 import { exportSignalsToCsv } from '../utils/exportCsv'
+import { expiraEn, esAltaConfianza } from '../utils/signals'
+import { useNowTick } from '../hooks/useNowTick'
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  SectionTitle,
+  SkeletonCard,
+} from '../components/ui'
 
 export default function HubPage() {
-  const { data: assets } = useQuery({ queryKey: ['assets'], queryFn: fetchAssets, refetchInterval: 5000 })
+  const { data: assets, isLoading, error, refetch } = useQuery({
+    queryKey: ['assets'],
+    queryFn: fetchAssets,
+    refetchInterval: 5000,
+  })
   const globalSignals = useStore((s) => s.globalSignals)
   const setAssets = useStore((s) => s.setAssets)
   const liveAssets = useStore((s) => s.assets)
@@ -18,86 +32,190 @@ export default function HubPage() {
     if (assets) setAssets(assets)
   }, [assets, setAssets])
 
-  // Separar señales activas y expiradas
-  const now = Date.now()
-  const activeSignals = globalSignals.filter((s) => {
-    const timeframe = s.timeframe || 'M15'
-    const minutesPerCandle = timeframe === 'M15' ? 15 : timeframe === 'H1' ? 60 : timeframe === 'H4' ? 240 : 1440
-    const expirationMs = (s.ts || 0) + s.expiracion_velas * minutesPerCandle * 60 * 1000
-    return expirationMs > now
-  })
-  const expiredSignals = globalSignals.filter((s) => {
-    const timeframe = s.timeframe || 'M15'
-    const minutesPerCandle = timeframe === 'M15' ? 15 : timeframe === 'H1' ? 60 : timeframe === 'H4' ? 240 : 1440
-    const expirationMs = (s.ts || 0) + s.expiracion_velas * minutesPerCandle * 60 * 1000
-    return expirationMs <= now
-  })
+  const now = useNowTick()
+  const activeSignals = globalSignals.filter((s) => expiraEn(s) > now)
+  const expiredSignals = globalSignals.filter((s) => expiraEn(s) <= now)
 
-  const handleExport = () => {
-    exportSignalsToCsv(globalSignals)
-  }
+  const runningCount = assets?.filter((a: any) => a.running).length ?? 0
+  const totalSignals = globalSignals.length
+  const highConviction = activeSignals.filter(esAltaConfianza).length
+
+  const stats = [
+    { label: 'Activos', value: isLoading ? '—' : String(assets?.length ?? 0) },
+    { label: 'En vivo', value: isLoading ? '—' : String(runningCount) },
+    { label: 'Señales activas', value: String(activeSignals.length) },
+    { label: 'Convicción alta', value: String(highConviction) },
+    { label: 'Acumuladas', value: String(totalSignals) },
+  ]
 
   return (
-    <div className="space-y-5">
-      <div className="flex justify-between items-center">
-        <h1 className="font-condensed text-[13px] tracking-widest text-text-muted uppercase">Hub</h1>
-        <div className="flex items-center gap-3">
-          <div className={`flex items-center gap-1.5 font-condensed text-[10px] tracking-widest uppercase ${derivConnected ? 'text-brand-cyan' : 'text-text-muted'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${derivConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-base-line'}`} />
-            Deriv {derivConnected ? 'ON' : 'OFF'}
+    <div>
+      <PageHeader
+        title="Hub"
+        eyebrow="Panel general"
+        description="Estado de los instrumentos y flujo de señales en tiempo real."
+        actions={
+          <>
+            <Badge tone={derivConnected ? 'brand' : 'muted'} title="Estado de la conexión Deriv">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  derivConnected ? 'bg-brand-cyan animate-pulse-dot' : 'bg-text-muted'
+                }`}
+              />
+              Deriv {derivConnected ? 'ON' : 'OFF'}
+            </Badge>
+            <Button
+              variant="secondary"
+              icon="download"
+              onClick={() => exportSignalsToCsv(globalSignals)}
+              disabled={globalSignals.length === 0}
+            >
+              Exportar CSV
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px bg-base-line border border-base-line mb-5">
+        {stats.map((s) => (
+          <div key={s.label} className="bg-base-panel px-3 py-2.5">
+            <div className="font-condensed text-[10px] font-semibold tracking-[0.14em] uppercase text-text-muted">
+              {s.label}
+            </div>
+            <div className="tabular font-mono text-lg text-text-primary mt-0.5">{s.value}</div>
           </div>
-          <button onClick={handleExport} className="border border-base-line bg-base-panel hover:bg-base-panel2 px-3 py-1 font-condensed text-[11px] tracking-widest uppercase text-text-secondary transition-colors">
-            📥 Exportar CSV
-          </button>
-        </div>
+        ))}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        {assets?.map((a: any) => {
-          const live = liveAssets[a.simbolo]
-          const price = live?.price ?? a.price
-          const isDeriv = a.fuente === 'deriv'
-          const derivOn = !!a.deriv_connected
-          return (
-            <Link key={a.simbolo} to={`/activo/${a.simbolo}`}>
-              <div className={`panel p-2.5 transition-colors ${a.running ? 'border-brand-cyan/40' : 'hover:border-base-line'}`}>
-                <div className="flex justify-between">
-                  <span className="font-mono font-semibold text-sm text-text-primary">{a.simbolo}</span>
-                  <span className={`font-condensed text-[10px] px-1.5 py-0.5 tracking-widest ${a.running ? 'bg-brand-cyan/10 text-brand-cyan border border-brand-cyan/40' : 'bg-base-panel2 text-text-muted border border-base-line'}`}>
-                    {a.running ? 'LIVE' : 'OFF'}
-                  </span>
-                </div>
-                <div className="font-condensed text-[11px] text-text-secondary mt-0.5">{a.nombre}</div>
-                <div className="tabular text-lg text-text-primary mt-1">{price != null ? price.toFixed(a.decimales || 5) : '—'}</div>
-                <div className="flex items-center gap-2 font-condensed text-[10px] text-text-muted mt-0.5 normal-case">
-                  <span>{a.session} | {a.kill_zone}</span>
-                  {isDeriv && (
-                    <span className={`px-1 border ${derivOn ? 'text-brand-cyan border-brand-cyan/40 bg-brand-cyan/10' : 'text-text-muted border-base-line'}`}>
-                      DERIV {derivOn ? 'ON' : 'OFF'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Link>
+
+      <SectionTitle
+        aside={
+          assets && (
+            <span className="tabular text-[10px] text-text-muted">{assets.length} instrumentos</span>
           )
-        })}
-      </div>
-      <div>
-        <h2 className="font-condensed text-[11px] tracking-widest uppercase text-text-muted mb-2">Señales activas</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-          {activeSignals.map((s) => (
-            <SignalCountdown key={`${s.id}-${s.ts}`} signal={s} />
-          ))}
-          {activeSignals.length === 0 && (
-            <div className="text-text-muted text-sm col-span-full">No hay señales activas.</div>
-          )}
+        }
+      >
+        Instrumentos
+      </SectionTitle>
+
+      {isLoading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </div>
+      )}
+      {error && (
+        <ErrorState
+          title="No se pudieron cargar los instrumentos"
+          message={error}
+          onRetry={() => refetch()}
+        />
+      )}
+      {assets && assets.length === 0 && (
+        <EmptyState
+          icon="database"
+          title="Sin instrumentos"
+          description="No hay activos configurados en el sistema."
+        />
+      )}
+      {assets && assets.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {assets.map((a: any) => {
+            const live = liveAssets[a.simbolo]
+            const price = live?.price ?? a.price
+            const isDeriv = a.fuente === 'deriv'
+            const derivOn = !!a.deriv_connected
+            const up =
+              live?.price != null && a.price != null ? (live.price > a.price ? 1 : live.price < a.price ? -1 : 0) : 0
+            return (
+              <Link key={a.simbolo} to={`/activo/${a.simbolo}`} className="group block">
+                <div
+                  className={`panel p-3 h-full transition-colors group-hover:border-base-edge ${
+                    a.running ? 'border-brand-cyan/40' : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-mono font-semibold text-sm text-text-primary truncate">
+                        {a.simbolo}
+                      </div>
+                      <div className="font-condensed text-[10px] tracking-[0.12em] uppercase text-text-muted truncate">
+                        {a.nombre}
+                      </div>
+                    </div>
+                    <Badge tone={a.running ? 'brand' : 'muted'}>{a.running ? 'LIVE' : 'OFF'}</Badge>
+                  </div>
+
+                  <div
+                    className={`tabular font-mono text-xl mt-2 ${
+                      up === 1 ? 'text-signal-long' : up === -1 ? 'text-signal-short' : 'text-text-primary'
+                    }`}
+                  >
+                    {price != null ? price.toFixed(a.decimales || 5) : '—'}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-base-line">
+                    <span className="font-condensed text-[10px] tracking-[0.1em] uppercase text-text-muted">
+                      {a.session || '—'} · {a.kill_zone || '—'}
+                    </span>
+                    {isDeriv && (
+                      <span
+                        className={`ml-auto font-condensed text-[9px] tracking-[0.12em] uppercase border px-1 py-px ${
+                          derivOn
+                            ? 'text-brand-cyan border-brand-cyan/40 bg-brand-cyan/10'
+                            : 'text-text-muted border-base-line'
+                        }`}
+                      >
+                        Deriv {derivOn ? 'ON' : 'OFF'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mt-6">
+        <SectionTitle
+          aside={
+            <span className="tabular text-[10px] text-text-muted">{activeSignals.length} abiertas</span>
+          }
+        >
+          Señales activas
+        </SectionTitle>
+        {activeSignals.length === 0 ? (
+          <EmptyState
+            icon="activity"
+            title="No hay señales activas"
+            description="Cuando un detector dispare una señal válida aparecerá acá con su cuenta regresiva."
+            compact
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+            {activeSignals.map((s) => (
+              <SignalCard key={`${s.id}-${s.ts}`} signal={s} variant="active" />
+            ))}
+          </div>
+        )}
       </div>
+
       {expiredSignals.length > 0 && (
-        <div className="mt-4">
-          <h2 className="font-condensed text-[11px] tracking-widest uppercase text-text-muted mb-2">Señales expiradas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+        <div className="mt-6">
+          <SectionTitle
+            aside={
+              <span className="tabular text-[10px] text-text-muted">
+                {expiredSignals.length} expiradas
+              </span>
+            }
+          >
+            Señales expiradas
+          </SectionTitle>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
             {expiredSignals.slice(0, 20).map((s) => (
-              <SignalCountdown key={`${s.id}-${s.ts}`} signal={s} />
+              <SignalCard key={`${s.id}-${s.ts}`} signal={s} variant="expired" />
             ))}
           </div>
         </div>
